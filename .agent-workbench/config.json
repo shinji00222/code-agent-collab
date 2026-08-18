@@ -1,0 +1,7 @@
+{
+  "projectName": "多Agent代码协作助手",
+  "mainVaultPath": "C:\\Users\\lwz12\\Desktop\\AI工作台知识库",
+  "devVaultPath": "C:\\Users\\lwz12\\Desktop\\AI工作台知识库\\01-项目\\project 多Agent代码协作助手\\dev-vault",
+  "mainVaultDefaultMode": "readonly",
+  "devVaultDefaultMode": "readwrite"
+}
