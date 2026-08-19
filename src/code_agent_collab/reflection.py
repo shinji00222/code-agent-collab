@@ -15,6 +15,14 @@ class ReflectionResult:
     output_path: Path
 
 
+@dataclass(frozen=True)
+class PendingNote:
+    path: Path
+    title: str
+    status: str
+    updated_at: datetime
+
+
 def _context_pack_dir(project_root: Path) -> Path:
     return project_root / "logs" / "context-packs"
 
@@ -48,6 +56,22 @@ def _extract_task_title(content: str, fallback: str) -> str:
         if line.startswith("# 任务上下文包："):
             return line.removeprefix("# 任务上下文包：").strip() or fallback
     return fallback
+
+
+def _extract_heading(content: str, fallback: str) -> str:
+    for line in content.splitlines():
+        if line.startswith("# "):
+            return line.removeprefix("# ").strip() or fallback
+    return fallback
+
+
+def _extract_status(content: str) -> str:
+    for line in content.splitlines():
+        if line.startswith("- 当前状态："):
+            return line.removeprefix("- 当前状态：").strip() or "未知"
+        if line.startswith("- 状态："):
+            return line.removeprefix("- 状态：").strip() or "未知"
+    return "未知"
 
 
 def _render_reflection(
@@ -110,3 +134,22 @@ def create_reflection(project_root: Path, task: str | None = None) -> Reflection
         ),
     )
     return ReflectionResult(task_id=task_id, source_path=source_path, output_path=output_path)
+
+
+def list_pending_notes(project_root: Path) -> list[PendingNote]:
+    pending_dir = _pending_dir(project_root)
+    if not pending_dir.exists():
+        return []
+
+    notes: list[PendingNote] = []
+    for path in sorted(pending_dir.glob("*.md"), key=lambda item: item.stat().st_mtime, reverse=True):
+        content = read_text(path)
+        notes.append(
+            PendingNote(
+                path=path,
+                title=_extract_heading(content, fallback=path.stem),
+                status=_extract_status(content),
+                updated_at=datetime.fromtimestamp(path.stat().st_mtime),
+            )
+        )
+    return notes

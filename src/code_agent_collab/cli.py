@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .config import save_default_config
 from .context_pack import create_context_pack
-from .reflection import create_reflection
+from .reflection import create_reflection, list_pending_notes
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -41,6 +41,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=".",
         help="Project root. Defaults to current directory.",
     )
+
+    pending_parser = subparsers.add_parser("pending", help="List pending compounding notes.")
+    pending_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root. Defaults to current directory.",
+    )
     return parser
 
 
@@ -64,6 +71,19 @@ def main(argv: list[str] | None = None) -> int:
         result = create_reflection(project_root, args.task)
         print(f"已生成候选复利记录：{result.output_path}")
         print(f"来源任务ID：{result.task_id}")
+        return 0
+
+    if args.command == "pending":
+        notes = list_pending_notes(project_root)
+        if not notes:
+            print("暂无待确认候选复利记录。")
+            return 0
+        print(f"待确认候选复利记录：{len(notes)} 条")
+        for index, note in enumerate(notes, start=1):
+            print(f"{index}. {note.title}")
+            print(f"   状态：{note.status}")
+            print(f"   更新时间：{note.updated_at:%Y-%m-%d %H:%M:%S}")
+            print(f"   路径：{note.path}")
         return 0
 
     parser.error("未知命令")

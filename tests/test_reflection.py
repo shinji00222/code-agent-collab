@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from code_agent_collab.reflection import create_reflection, find_context_pack
+from code_agent_collab.reflection import create_reflection, find_context_pack, list_pending_notes
 
 
 class ReflectionTests(unittest.TestCase):
@@ -34,6 +34,24 @@ class ReflectionTests(unittest.TestCase):
             content = result.output_path.read_text(encoding="utf-8")
             self.assertIn("候选复利记录", content)
             self.assertIn("主知识库写入状态：未写入", content)
+
+    def test_list_pending_notes_reads_title_and_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            pending_dir = project_root / "dev-vault" / "pending"
+            pending_dir.mkdir(parents=True)
+            note_path = pending_dir / "2026-08-19-demo-复利候选.md"
+            note_path.write_text(
+                "# 候选复利记录：demo\n\n- 当前状态：待用户确认\n",
+                encoding="utf-8",
+            )
+
+            notes = list_pending_notes(project_root)
+
+            self.assertEqual(len(notes), 1)
+            self.assertEqual(notes[0].title, "候选复利记录：demo")
+            self.assertEqual(notes[0].status, "待用户确认")
+            self.assertEqual(notes[0].path, note_path)
 
 
 if __name__ == "__main__":
