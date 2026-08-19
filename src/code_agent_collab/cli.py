@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .config import save_default_config
 from .context_pack import create_context_pack
+from .reflection import create_reflection
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -28,6 +29,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=".",
         help="Project root. Defaults to current directory.",
     )
+
+    reflect_parser = subparsers.add_parser("reflect", help="Create a pending compounding note.")
+    reflect_parser.add_argument(
+        "--task",
+        default=None,
+        help="Task id or keyword. Defaults to the latest context pack.",
+    )
+    reflect_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root. Defaults to current directory.",
+    )
     return parser
 
 
@@ -45,6 +58,12 @@ def main(argv: list[str] | None = None) -> int:
         result = create_context_pack(project_root, args.goal)
         print(f"已生成任务上下文包：{result.output_path}")
         print(f"任务ID：{result.task_id}")
+        return 0
+
+    if args.command == "reflect":
+        result = create_reflection(project_root, args.task)
+        print(f"已生成候选复利记录：{result.output_path}")
+        print(f"来源任务ID：{result.task_id}")
         return 0
 
     parser.error("未知命令")
