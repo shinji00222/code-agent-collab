@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from .config import save_default_config
 from .context_pack import create_context_pack
 from .demo import run_demo
 from .reflection import create_reflection, list_pending_notes
+from .providers import ProviderConfig, create_provider
 from .workflow import run_workflow
 
 
@@ -66,13 +68,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=".",
         help="Project root. Defaults to current directory.",
     )
+
+    subparsers.add_parser("provider", help="Show the active AI provider configuration.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    project_root = Path(args.project_root).resolve()
+    project_root = Path(getattr(args, "project_root", ".")).resolve()
 
     if args.command == "init":
         path = save_default_config(project_root)
@@ -113,13 +117,28 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "run":
-        result = run_workflow(project_root, args.goal)
+        try:
+            result = run_workflow(project_root, args.goal)
+        except ValueError as exc:
+            print(f"无法运行工作流：{exc}")
+            return 2
         print("已完成多 Agent 工作流。")
         print(f"任务ID：{result.task_id}")
         print(f"上下文包：{result.context_pack.output_path}")
         print(f"工作流日志：{result.workflow_log_path}")
         print(f"候选复利记录：{result.reflection.output_path}")
         print("Agent 顺序：" + " -> ".join(item.role for item in result.agent_results))
+        return 0
+
+    if args.command == "provider":
+        config = ProviderConfig.from_env()
+        provider = create_provider(config)
+        print(f"当前 Provider：{config.name}")
+        print(f"模型：{config.model}")
+        print(f"接口地址：{config.base_url or '本地模拟，不联网'}")
+        print(f"密钥环境变量：{config.api_key_env or '未配置'}")
+        key_configured = bool(config.api_key_env and os.getenv(config.api_key_env))
+        print(f"密钥状态：{'已配置' if key_configured else '未配置'}")
         return 0
 
     parser.error("未知命令")

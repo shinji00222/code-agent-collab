@@ -9,9 +9,11 @@
 
 ## 当前版本
 
-当前版本：`v0.2.0`
+当前版本：`v0.3.0`
 
-阶段定位：多 Agent 协作骨架。
+阶段定位：Provider 接入实验版。
+
+当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 可以调用真实模型生成计划。
 
 ## 核心原则
 
@@ -19,7 +21,7 @@
 - AI 自动生成内容先进入 `dev-vault`。
 - 候选复利记录先进入 `dev-vault/pending`。
 - 写入主知识库必须经过用户确认。
-- 当前 Agent 是规则版骨架，不调用真实 AI API。
+- CoordinatorAgent、KnowledgeAgent、ValidatorAgent 和 ReflectorAgent 仍是规则版；PlannerAgent 支持通过 Provider 调用模型。
 
 ## 命令
 
@@ -32,6 +34,7 @@ python -m code_agent_collab.cli reflect --task "任务关键词"
 python -m code_agent_collab.cli pending
 python -m code_agent_collab.cli demo "任务目标"
 python -m code_agent_collab.cli run "任务目标"
+python -m code_agent_collab.cli provider
 ```
 
 ## 命令说明
@@ -41,6 +44,21 @@ python -m code_agent_collab.cli run "任务目标"
 - `pending`：列出等待用户确认的候选记录。
 - `demo`：一键跑通基础闭环。
 - `run`：执行规则版多 Agent 工作流。
+- `provider`：查看当前 AI Provider 配置；默认显示本地模拟 Provider。
+
+切换到 DeepSeek：
+
+```powershell
+$env:AGENT_WORKBENCH_PROVIDER="deepseek"
+$env:DEEPSEEK_API_KEY="你的密钥"
+```
+
+切换到 OpenAI：
+
+```powershell
+$env:AGENT_WORKBENCH_PROVIDER="openai"
+$env:OPENAI_API_KEY="你的密钥"
+```
 
 ## 多 Agent 角色
 

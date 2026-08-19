@@ -16,6 +16,7 @@ from .agents import (
 from .context_pack import ContextPackResult, create_context_pack
 from .file_utils import ensure_dir, write_text
 from .reflection import ReflectionResult, create_reflection
+from .providers import create_provider
 
 
 @dataclass(frozen=True)
@@ -73,7 +74,7 @@ def run_workflow(project_root: Path, goal: str) -> WorkflowResult:
     agents = [
         CoordinatorAgent(),
         KnowledgeAgent(),
-        PlannerAgent(),
+        PlannerAgent(provider=create_provider()),
         ValidatorAgent(),
         ReflectorAgent(),
     ]

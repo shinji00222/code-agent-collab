@@ -1,5 +1,23 @@
 # 更新日志
 
+## v0.3.0 - 2026-08-19
+
+### 新增
+
+- 增加统一 AI Provider 接口。
+- 增加 DeepSeek 和 OpenAI 预设。
+- PlannerAgent 支持通过 Provider 生成计划。
+- 增加默认本地模拟 Provider，便于不联网验证协作流程。
+- 增加 `provider` 命令查看当前 Provider 配置。
+- 增加 OpenAI 兼容接口的环境变量配置骨架。
+
+### 边界
+
+- 默认仍使用 mock，不配置密钥就不会联网。
+- 当前只有 PlannerAgent 调用 Provider，其他 Agent 仍是规则版。
+- API Key 只允许从环境变量读取，不写入项目文件或日志。
+- 该版本属于实验版，暂不代表完整的多模型协作。
+
 ## v0.2.0 - 2026-08-19
 
 ### 新增
