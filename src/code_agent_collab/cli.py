@@ -7,6 +7,7 @@ from .config import save_default_config
 from .context_pack import create_context_pack
 from .demo import run_demo
 from .reflection import create_reflection, list_pending_notes
+from .workflow import run_workflow
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -57,6 +58,14 @@ def _build_parser() -> argparse.ArgumentParser:
         default=".",
         help="Project root. Defaults to current directory.",
     )
+
+    run_parser = subparsers.add_parser("run", help="Run the rule-based multi-agent workflow.")
+    run_parser.add_argument("goal", help="Task goal.")
+    run_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root. Defaults to current directory.",
+    )
     return parser
 
 
@@ -101,6 +110,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"上下文包：{result.context_pack.output_path}")
         print(f"候选复利记录：{result.reflection.output_path}")
         print(f"当前待确认候选记录：{len(result.pending_notes)} 条")
+        return 0
+
+    if args.command == "run":
+        result = run_workflow(project_root, args.goal)
+        print("已完成多 Agent 工作流。")
+        print(f"任务ID：{result.task_id}")
+        print(f"上下文包：{result.context_pack.output_path}")
+        print(f"工作流日志：{result.workflow_log_path}")
+        print(f"候选复利记录：{result.reflection.output_path}")
+        print("Agent 顺序：" + " -> ".join(item.role for item in result.agent_results))
         return 0
 
     parser.error("未知命令")

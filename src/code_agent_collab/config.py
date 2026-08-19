@@ -21,9 +21,14 @@ class WorkbenchConfig:
 
 
 def default_config(project_root: Path) -> WorkbenchConfig:
+    if project_root.parent.name == "01-项目":
+        main_vault_path = str(project_root.parent.parent)
+    else:
+        main_vault_path = str(project_root.parent)
+
     return WorkbenchConfig(
         project_name=project_root.name.removeprefix("project "),
-        main_vault_path=r"C:\Users\lwz12\Desktop\AI工作台知识库",
+        main_vault_path=main_vault_path,
         dev_vault_path=str(project_root / "dev-vault"),
     )
 

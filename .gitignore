@@ -1,5 +1,6 @@
 __pycache__/
 *.py[cod]
+.agent-workbench/config.json
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
