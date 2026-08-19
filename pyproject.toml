@@ -1,0 +1,16 @@
+[project]
+name = "code-agent-collab"
+version = "0.3.0"
+description = "Local-first multi-agent coding workbench prototype."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+agent-workbench = "code_agent_collab.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
