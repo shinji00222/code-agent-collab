@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .config import save_default_config
 from .context_pack import create_context_pack
+from .demo import run_demo
 from .reflection import create_reflection, list_pending_notes
 
 
@@ -48,6 +49,14 @@ def _build_parser() -> argparse.ArgumentParser:
         default=".",
         help="Project root. Defaults to current directory.",
     )
+
+    demo_parser = subparsers.add_parser("demo", help="Run start, reflect, and pending in one command.")
+    demo_parser.add_argument("goal", help="Task goal.")
+    demo_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root. Defaults to current directory.",
+    )
     return parser
 
 
@@ -84,6 +93,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"   状态：{note.status}")
             print(f"   更新时间：{note.updated_at:%Y-%m-%d %H:%M:%S}")
             print(f"   路径：{note.path}")
+        return 0
+
+    if args.command == "demo":
+        result = run_demo(project_root, args.goal)
+        print("已完成 demo 闭环。")
+        print(f"上下文包：{result.context_pack.output_path}")
+        print(f"候选复利记录：{result.reflection.output_path}")
+        print(f"当前待确认候选记录：{len(result.pending_notes)} 条")
         return 0
 
     parser.error("未知命令")
