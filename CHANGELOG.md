@@ -13,6 +13,7 @@
 - 修正 DeepSeek 默认模型为官方 `deepseek-chat`，集中预留 DeepSeek/OpenAI/OpenAI 兼容预设。
 - 增加 `AGENT_WORKBENCH_MODEL`、`AGENT_WORKBENCH_BASE_URL`、`AGENT_WORKBENCH_API_KEY_ENV` 环境变量覆盖。
 - `provider` 命令显示可用 Provider 列表，并修复 Windows 管道输出中文乱码。
+- 修复真实 Provider 调用时日志显示固定为 `openai-compatible` 的问题，现在按实际配置显示（如 `deepseek`）。
 
 ### 边界
 

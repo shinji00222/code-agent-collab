@@ -28,6 +28,7 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(config.model, "deepseek-chat")
         self.assertEqual(config.base_url, "https://api.deepseek.com")
         self.assertEqual(config.api_key_env, "DEEPSEEK_API_KEY")
+        self.assertEqual(create_provider(config).name, "deepseek")
 
     def test_openai_preset_uses_safe_defaults(self) -> None:
         with patch.dict(os.environ, {"AGENT_WORKBENCH_PROVIDER": "openai"}, clear=True):

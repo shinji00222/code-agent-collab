@@ -73,10 +73,9 @@ class MockProvider(AIProvider):
 
 
 class OpenAICompatibleProvider(AIProvider):
-    name = "openai-compatible"
-
     def __init__(self, config: ProviderConfig) -> None:
         self.config = config
+        self.name = config.name or "openai-compatible"
 
     def complete(self, system_prompt: str, user_prompt: str) -> str:
         if not self.config.base_url:
