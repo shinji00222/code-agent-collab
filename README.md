@@ -9,11 +9,11 @@
 
 ## 当前版本
 
-当前版本：`v0.5.0`（开发版）
+当前版本：`v0.7.0`（发布版）
 
-阶段定位：主知识库只读检索。
+阶段定位：主知识库只读检索 + AI 审查入库 + Web 终端。
 
-当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿。KnowledgeAgent 会从主知识库只读检索与任务相关的文档，生成知识补充文件，供后续 Agent 使用。
+当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿。KnowledgeAgent 会从主知识库只读检索与任务相关的文档，生成知识补充文件，供后续 Agent 使用；候选知识可经 AI 审查后入库或转人工处理；提供 PowerShell 风格的本地网页终端。关闭网页终端程序会立即停止正在运行的命令，AI 调用不会在后台继续。
 
 ## 核心原则
 

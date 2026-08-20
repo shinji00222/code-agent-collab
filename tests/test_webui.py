@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 import unittest
 
-from code_agent_collab.webui import build_command, run_cli
+from code_agent_collab.webui import _kill_process_tree, build_command, run_cli
 
 
 class CommandBuildTests(unittest.TestCase):
@@ -30,6 +32,20 @@ class RunCliTests(unittest.TestCase):
         code, output = run_cli(["provider"])
         self.assertEqual(code, 0)
         self.assertIn("当前 Provider", output)
+
+    def test_kill_process_tree_terminates_child(self) -> None:
+        process = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            _kill_process_tree(process)
+            process.wait(timeout=10)
+            self.assertIsNotNone(process.poll())
+        finally:
+            if process.poll() is None:
+                _kill_process_tree(process)
 
 
 if __name__ == "__main__":

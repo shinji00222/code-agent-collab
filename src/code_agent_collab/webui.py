@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import shlex
@@ -55,10 +56,11 @@ PAGE = """<!DOCTYPE html>
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; background: #0c0c0c; color: #e6e6e6;
                font-family: Consolas, "Courier New", monospace; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
   #titlebar { background: #012456; color: #fff; padding: 6px 12px;
               font-size: 13px; user-select: none; }
   #output { margin: 0; padding: 12px 14px; white-space: pre-wrap; word-break: break-all;
-            font-size: 14px; line-height: 1.5; height: calc(100vh - 78px);
+            font-size: 14px; line-height: 1.5; flex: 1;
             overflow-y: auto; }
   #input-line { display: flex; align-items: center; padding: 8px 14px;
                 border-top: 1px solid #333; background: #111; }
@@ -122,6 +124,33 @@ PAGE = """<!DOCTYPE html>
 </html>
 """
 
+_ACTIVE_PROCESSES: set[subprocess.Popen] = set()
+
+
+def _kill_process_tree(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+        )
+    else:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+
+
+def _shutdown_cleanup() -> None:
+    for process in list(_ACTIVE_PROCESSES):
+        _kill_process_tree(process)
+
+
+atexit.register(_shutdown_cleanup)
+
 
 def build_command(text: str) -> list[str]:
     args = shlex.split(text)
@@ -137,20 +166,29 @@ def run_cli(args: list[str], timeout: int = 180) -> tuple[int, str]:
         return 0, HELP_TEXT
     env = os.environ.copy()
     env["PYTHONPATH"] = str(SRC_DIR)
-    result = subprocess.run(
+    process = subprocess.Popen(
         [sys.executable, "-m", "code_agent_collab.cli", *args],
         cwd=PROJECT_ROOT,
         env=env,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=timeout,
     )
-    output = result.stdout
-    if result.stderr:
-        output += "\n" + result.stderr
-    return result.returncode, output
+    _ACTIVE_PROCESSES.add(process)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_tree(process)
+        process.wait()
+        raise
+    finally:
+        _ACTIVE_PROCESSES.discard(process)
+    output = stdout
+    if stderr:
+        output += "\n" + stderr
+    return process.returncode, output
 
 
 class Handler(BaseHTTPRequestHandler):
