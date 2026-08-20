@@ -44,7 +44,7 @@ python -m code_agent_collab.cli provider
 - `pending`：列出等待用户确认的候选记录。
 - `demo`：一键跑通基础闭环。
 - `run`：执行规则版多 Agent 工作流。
-- `provider`：查看当前 AI Provider 配置；默认显示本地模拟 Provider。
+- `provider`：查看当前 AI Provider 配置和可用 Provider 列表；默认显示本地模拟 Provider。
 
 切换到 DeepSeek：
 
@@ -58,6 +58,19 @@ $env:DEEPSEEK_API_KEY="你的密钥"
 ```powershell
 $env:AGENT_WORKBENCH_PROVIDER="openai"
 $env:OPENAI_API_KEY="你的密钥"
+```
+
+模型默认值：
+
+- DeepSeek：`deepseek-chat`（可换成 `deepseek-reasoner`）
+- OpenAI：`gpt-5-mini`
+
+需要覆盖默认模型、接口地址或密钥环境变量时（例如接入 OpenAI 兼容服务）：
+
+```powershell
+$env:AGENT_WORKBENCH_MODEL="你的模型名"
+$env:AGENT_WORKBENCH_BASE_URL="https://你的兼容接口/v1"
+$env:AGENT_WORKBENCH_API_KEY_ENV="你的密钥环境变量名"
 ```
 
 ## 多 Agent 角色

@@ -14,9 +14,17 @@
 
 - 做什么：所有 AI 调用走统一 `AIProvider` 接口，默认 mock。
 - 为什么：不把模型写死在业务里，DeepSeek/OpenAI/本地模型可切换。
-- 怎么做：配置预设（`base_url`/`model`/`api_key_env`）；API Key 只从环境变量读取，绝不写入项目文件、日志或文档。
+- 怎么做：集中预设表 `PROVIDER_PRESETS` 定义 `base_url`/`model`/`api_key_env`；通过 `AGENT_WORKBENCH_PROVIDER` 选择，通过 `AGENT_WORKBENCH_MODEL`、`AGENT_WORKBENCH_BASE_URL`、`AGENT_WORKBENCH_API_KEY_ENV` 覆盖默认值；API Key 只从环境变量读取，绝不写入项目文件、日志或文档。
 - 怎么验证：`test_providers.py` 覆盖默认 mock、缺少 Key 时安全提示、未知 Provider 拒绝。
 - 常见坑：把 Key 写进 `config.json` 或 CHANGELOG；mock 结果与真实模型差异大，接真实模型前先单独验证。
+
+## 2.1 新增一个 Provider 的标准流程
+
+1. 在 `PROVIDER_PRESETS` 增加预设：`model`/`base_url`/`api_key_env`。
+2. 在 `SUPPORTED_PROVIDERS` 中自动出现，`provider` 命令即可列出。
+3. 需要自定义请求格式时，在 `providers.py` 扩展 `OpenAICompatibleProvider` 或新增 Provider 类，并接入 `create_provider`。
+4. 在 `tests/test_providers.py` 增加预设断言和环境变量覆盖断言。
+5. 更新 README 配置说明和 CHANGELOG。
 
 ## 3. 上下文包（context-pack）
 

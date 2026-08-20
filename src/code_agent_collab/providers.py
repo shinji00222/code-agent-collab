@@ -6,6 +6,32 @@ from dataclasses import dataclass
 from urllib import request
 
 
+PROVIDER_PRESETS: dict[str, dict[str, str]] = {
+    "mock": {
+        "model": "mock-model",
+        "base_url": "",
+        "api_key_env": "",
+    },
+    "deepseek": {
+        "model": "deepseek-chat",
+        "base_url": "https://api.deepseek.com",
+        "api_key_env": "DEEPSEEK_API_KEY",
+    },
+    "openai": {
+        "model": "gpt-5-mini",
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+    },
+    "openai-compatible": {
+        "model": "",
+        "base_url": "",
+        "api_key_env": "AGENT_WORKBENCH_API_KEY",
+    },
+}
+
+SUPPORTED_PROVIDERS: tuple[str, ...] = tuple(PROVIDER_PRESETS)
+
+
 @dataclass(frozen=True)
 class ProviderConfig:
     name: str = "mock"
@@ -16,27 +42,13 @@ class ProviderConfig:
     @classmethod
     def from_env(cls) -> "ProviderConfig":
         name = os.getenv("AGENT_WORKBENCH_PROVIDER", "mock")
-        is_deepseek = name == "deepseek"
-        is_openai = name == "openai"
+        preset = PROVIDER_PRESETS.get(name, {})
         return cls(
             name=name,
-            model=os.getenv(
-                "AGENT_WORKBENCH_MODEL",
-                "deepseek-v4-flash"
-                if is_deepseek
-                else "gpt-5-mini" if is_openai else "mock-model",
-            ),
-            base_url=os.getenv(
-                "AGENT_WORKBENCH_BASE_URL",
-                "https://api.deepseek.com"
-                if is_deepseek
-                else "https://api.openai.com/v1" if is_openai else "",
-            ),
+            model=os.getenv("AGENT_WORKBENCH_MODEL", preset.get("model", "")),
+            base_url=os.getenv("AGENT_WORKBENCH_BASE_URL", preset.get("base_url", "")),
             api_key_env=os.getenv(
-                "AGENT_WORKBENCH_API_KEY_ENV",
-                "DEEPSEEK_API_KEY"
-                if is_deepseek
-                else "OPENAI_API_KEY" if is_openai else "",
+                "AGENT_WORKBENCH_API_KEY_ENV", preset.get("api_key_env", "")
             ),
         )
 
