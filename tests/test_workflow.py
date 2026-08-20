@@ -17,10 +17,14 @@ class WorkflowTests(unittest.TestCase):
 
             result = run_workflow(project_root, "测试多Agent协作")
 
-            self.assertEqual(len(result.agent_results), 5)
+            self.assertEqual(len(result.agent_results), 6)
             self.assertEqual(result.agent_results[0].role, "CoordinatorAgent")
             self.assertIn("模拟 AI 已收到任务", result.agent_results[2].summary)
             self.assertIn("Provider：mock", result.agent_results[2].summary)
+            self.assertEqual(result.agent_results[3].role, "CoderAgent")
+            self.assertTrue(
+                list((project_root / "dev-vault" / "projects").glob("*-coder-draft.md"))
+            )
             self.assertEqual(result.agent_results[-1].role, "ReflectorAgent")
             self.assertTrue(result.context_pack.output_path.exists())
             self.assertTrue(result.workflow_log_path.exists())

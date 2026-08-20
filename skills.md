@@ -1,0 +1,58 @@
+# 项目 Skills：多Agent代码协作助手
+
+记录本项目已验证、可复用的开发技能。任务中积累的新经验先在这里沉淀，避免重复踩坑。
+
+## 1. 多 Agent 顺序工作流
+
+- 做什么：任务按 Coordinator → Knowledge → Planner → Coder → Validator → Reflector 顺序执行，每个 Agent 产出 `AgentResult` 并记录日志。
+- 为什么：职责单一、顺序可控，便于审计每一步。
+- 怎么做：Agent 之间只共享上下文包（context-pack），不共享聊天记录；每个 Agent 用不同 system prompt 区分职责。
+- 怎么验证：`python -m unittest discover -s tests`，工作流测试断言 Agent 数量与顺序。
+- 常见坑：新增 Agent 后忘记同步 `agents/__init__.py`、`workflow.py` 和 `tests/test_workflow.py` 的断言数量。
+
+## 2. Provider 抽象（mock / DeepSeek / OpenAI）
+
+- 做什么：所有 AI 调用走统一 `AIProvider` 接口，默认 mock。
+- 为什么：不把模型写死在业务里，DeepSeek/OpenAI/本地模型可切换。
+- 怎么做：配置预设（`base_url`/`model`/`api_key_env`）；API Key 只从环境变量读取，绝不写入项目文件、日志或文档。
+- 怎么验证：`test_providers.py` 覆盖默认 mock、缺少 Key 时安全提示、未知 Provider 拒绝。
+- 常见坑：把 Key 写进 `config.json` 或 CHANGELOG；mock 结果与真实模型差异大，接真实模型前先单独验证。
+
+## 3. 上下文包（context-pack）
+
+- 做什么：每轮任务生成固定模板的上下文包（目标/必须遵守/相关文件/已知风险/允许范围/当前状态），写入 `logs/context-packs`。
+- 为什么：聊天记录不能当数据库，长任务需要可重复读取的项目事实。
+- 怎么做：固定目录 + 关键词匹配 + 文件摘要，暂不引入向量数据库。
+- 怎么验证：`test_context_pack.py`。
+
+## 4. 知识库隔离与候选沉淀
+
+- 做什么：主知识库默认只读；AI 产出先进 `dev-vault`（`pending`/`projects`/`rules`），经人工确认后才能进主知识库。
+- 为什么：防止 AI 自动污染长期知识库。
+- 怎么做：写主知识库属于 `L3_CONFIRM_REQUIRED`；复盘候选先进 `dev-vault/pending`。
+- 怎么验证：`test_demo.py` / `test_reflection.py` 断言只写 dev-vault。
+
+## 5. 版本管理
+
+- 做什么：区分开发版/实验版/稳定版/发布版；语义化版本；发布版必须 CHANGELOG + tag + 干净快照分支。
+- 为什么：开发中间态和正式发布混在一起会导致回滚和排查困难。
+- 怎么做：新功能模块升次版本；发布前测试通过、Git 状态干净、更新 CHANGELOG、打 tag；公开仓库用干净快照分支。
+- 常见坑：只上传代码不写版本说明；忘记同步 CHANGELOG/README；快照分支命名与用途不符（如 `agents/model-inquiry` 实际是 v0.3.0 发布快照）。
+
+## 6. 新增一个 Agent 角色的标准流程
+
+1. 在 `src/code_agent_collab/agents/` 新建 `<name>.py`，继承 `BaseAgent`，定义 `role` 和 `permission`。
+2. 在 `agents/__init__.py` 导出并加入 `__all__`。
+3. 在 `workflow.py` 加入 Agent 列表，并决定它的 provider 和位置。
+4. 更新 `tests/test_workflow.py` 的 Agent 数量断言和新增角色的断言。
+5. 更新 README 角色列表、CHANGELOG，必要时更新 VERSIONING.md。
+6. 跑全部测试，确认通过后再提交。
+
+## 常用命令
+
+```powershell
+$env:PYTHONPATH="src"
+python -m code_agent_collab.cli start "任务目标"
+python -m code_agent_collab.cli run "任务目标"
+python -m unittest discover -s tests
+```

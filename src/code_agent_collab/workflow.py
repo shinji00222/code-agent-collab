@@ -8,6 +8,7 @@ from .agents import (
     AgentContext,
     AgentResult,
     CoordinatorAgent,
+    CoderAgent,
     KnowledgeAgent,
     PlannerAgent,
     ReflectorAgent,
@@ -75,6 +76,7 @@ def run_workflow(project_root: Path, goal: str) -> WorkflowResult:
         CoordinatorAgent(),
         KnowledgeAgent(),
         PlannerAgent(provider=create_provider()),
+        CoderAgent(provider=create_provider()),
         ValidatorAgent(),
         ReflectorAgent(),
     ]
