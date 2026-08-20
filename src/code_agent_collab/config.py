@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .file_utils import write_text
@@ -40,16 +41,20 @@ def config_path(project_root: Path) -> Path:
 def load_config(project_root: Path) -> WorkbenchConfig:
     path = config_path(project_root)
     if not path.exists():
-        return default_config(project_root)
-
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return WorkbenchConfig(
-        project_name=data["projectName"],
-        main_vault_path=data["mainVaultPath"],
-        dev_vault_path=data["devVaultPath"],
-        main_vault_default_mode=data.get("mainVaultDefaultMode", "readonly"),
-        dev_vault_default_mode=data.get("devVaultDefaultMode", "readwrite"),
-    )
+        cfg = default_config(project_root)
+    else:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        cfg = WorkbenchConfig(
+            project_name=data["projectName"],
+            main_vault_path=data["mainVaultPath"],
+            dev_vault_path=data["devVaultPath"],
+            main_vault_default_mode=data.get("mainVaultDefaultMode", "readonly"),
+            dev_vault_default_mode=data.get("devVaultDefaultMode", "readwrite"),
+        )
+    env_main_vault = os.getenv("AGENT_WORKBENCH_MAIN_VAULT")
+    if env_main_vault:
+        cfg = replace(cfg, main_vault_path=env_main_vault)
+    return cfg
 
 
 def save_default_config(project_root: Path) -> Path:

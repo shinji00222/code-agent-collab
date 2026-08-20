@@ -10,6 +10,13 @@ from .context_pack import create_context_pack
 from .demo import run_demo
 from .reflection import create_reflection, list_pending_notes
 from .providers import SUPPORTED_PROVIDERS, ProviderConfig, create_provider
+from .review import (
+    confirm_pending_note,
+    discard_pending_note,
+    find_pending_path,
+    list_pending_paths,
+    review_pending_note,
+)
 from .workflow import run_workflow
 
 
@@ -58,6 +65,34 @@ def _build_parser() -> argparse.ArgumentParser:
 
     pending_parser = subparsers.add_parser("pending", help="List pending compounding notes.")
     pending_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root. Defaults to current directory.",
+    )
+
+    review_parser = subparsers.add_parser("review", help="AI 审查候选复利记录并入库或标记人工处理。")
+    review_parser.add_argument(
+        "--task",
+        default=None,
+        help="Task keyword. Defaults to all pending notes.",
+    )
+    review_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root. Defaults to current directory.",
+    )
+
+    confirm_parser = subparsers.add_parser("confirm", help="人工确认候选记录并写入主知识库。")
+    confirm_parser.add_argument("name", help="Pending note filename or keyword.")
+    confirm_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root. Defaults to current directory.",
+    )
+
+    discard_parser = subparsers.add_parser("discard", help="废弃候选记录，不写入主知识库。")
+    discard_parser.add_argument("name", help="Pending note filename or keyword.")
+    discard_parser.add_argument(
         "--project-root",
         default=".",
         help="Project root. Defaults to current directory.",
@@ -117,6 +152,31 @@ def main(argv: list[str] | None = None) -> int:
             print(f"   状态：{note.status}")
             print(f"   更新时间：{note.updated_at:%Y-%m-%d %H:%M:%S}")
             print(f"   路径：{note.path}")
+        return 0
+
+    if args.command == "review":
+        provider = create_provider()
+        paths = list_pending_paths(project_root, getattr(args, "task", None))
+        if not paths:
+            print("暂无待审查的候选记录。")
+            return 0
+        for path in paths:
+            result = review_pending_note(project_root, path, provider)
+            print(f"{result.path.name} -> {result.status}（{result.reason}）")
+        return 0
+
+    if args.command == "confirm":
+        path = find_pending_path(project_root, args.name)
+        result = confirm_pending_note(project_root, path)
+        print(f"{result.path.name} -> {result.status}（{result.reason}）")
+        if result.target_path:
+            print(f"主知识库文件：{result.target_path}")
+        return 0
+
+    if args.command == "discard":
+        path = find_pending_path(project_root, args.name)
+        result = discard_pending_note(path)
+        print(f"{result.path.name} -> {result.status}")
         return 0
 
     if args.command == "demo":
