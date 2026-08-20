@@ -23,6 +23,23 @@
 - 写入主知识库必须经过用户确认。
 - CoordinatorAgent、ValidatorAgent 和 ReflectorAgent 仍是规则版；PlannerAgent 和 CoderAgent 支持通过 Provider 调用模型；KnowledgeAgent 从主知识库只读检索相关文档。
 
+## 项目结构
+
+```text
+project 多Agent代码协作助手/
+├── src/code_agent_collab/   # 程序源码（agents/ 是 6 个 Agent 角色）
+├── tests/                   # 自动化测试
+├── product-docs/            # 人写的需求、规则、企划文档
+├── dev-vault/               # AI 产出区（候选记录、代码草稿），确认后才能进主知识库
+├── logs/                    # 本地运行产物（上下文包、工作流日志）
+├── .agent-workbench/        # 本地配置（config.json 不进 Git）
+├── MAINTENANCE.md           # 维护指南：目录说明、常见改动、发布流程
+├── skills.md                # 项目技能与经验
+├── README.md / CHANGELOG.md / VERSIONING.md / AGENTS.md
+```
+
+详细说明见 [MAINTENANCE.md](MAINTENANCE.md)。
+
 ## 命令
 
 在项目根目录运行：

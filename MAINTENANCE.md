@@ -1,0 +1,138 @@
+# 维护指南（不靠 AI 也能看懂）
+
+这份文档写给维护这个项目的人，目标是：不看代码细节也能知道项目怎么跑、每个文件干什么、常见改动怎么做。
+
+## 1. 项目是干什么的
+
+一个本地优先的命令行工具：你给它一个任务，它按顺序让 6 个角色 Agent 协作（拆任务 → 查知识 → 出计划 → 写代码草稿 → 检查 → 复盘），结果先进 `dev-vault` 待确认区，不直接改正式源码、不写主知识库。
+
+## 2. 目录结构
+
+```text
+project 多Agent代码协作助手/
+├── src/code_agent_collab/   # 程序源码
+│   ├── agents/              # 6 个 Agent 角色（coordinator、knowledge、planner、coder、validator、reflector）
+│   ├── cli.py               # 命令行入口（所有命令都从这里进）
+│   ├── providers.py         # AI Provider 预设表（mock / deepseek / openai / openai-compatible）
+│   ├── knowledge.py         # 主知识库只读检索（关键词提取 + 搜索）
+│   ├── context_pack.py      # 任务上下文包生成
+│   ├── workflow.py          # 多 Agent 工作流编排（Agent 顺序在这里）
+│   ├── config.py            # 本地配置读取（支持环境变量覆盖）
+│   └── ...                  # demo、reflection、file_utils 等辅助模块
+├── tests/                   # 自动化测试（unittest，对应每个功能模块）
+├── product-docs/            # 人写的需求、规则、企划文档（程序不依赖，只作参考）
+├── dev-vault/               # AI 产出区：pending 候选记录、projects 代码草稿、rules 实验规则
+├── logs/                    # 本地运行产物：context-packs 上下文包、workflows 工作流日志
+├── .agent-workbench/        # 本地配置（config.example.json 示例；config.json 真实配置，不进 Git）
+├── MAINTENANCE.md           # 本文件：维护指南
+├── skills.md                # 项目技能与经验（新增 Agent/Provider 的标准流程）
+├── AGENTS.md                # 给 AI 的项目协作规则
+├── README.md                # 项目介绍、命令、使用说明
+├── CHANGELOG.md             # 版本变更记录
+├── VERSIONING.md            # 版本号规则与发布流程
+└── pyproject.toml           # 包元数据（无第三方依赖）
+```
+
+## 3. 一次任务是怎么跑起来的
+
+```text
+你输入命令：python -m code_agent_collab.cli run "任务"
+      ↓
+生成上下文包 logs/context-packs/<任务ID>.md（任务目标、项目文档、知识库边界、Git 状态）
+      ↓
+6 个 Agent 按顺序执行，每个产出 AgentResult：
+  1. CoordinatorAgent  拆任务（规则）
+  2. KnowledgeAgent    从主知识库只读检索相关文档，生成 -knowledge.md（规则）
+  3. PlannerAgent      生成执行计划（可调真实 AI）
+  4. CoderAgent        生成代码草稿，写 dev-vault/projects（可调真实 AI）
+  5. ValidatorAgent    检查上下文包和边界（规则）
+  6. ReflectorAgent    复盘候选，写 dev-vault/pending（规则）
+      ↓
+写工作流日志 logs/workflows/<任务ID>.md，生成候选复利记录
+```
+
+## 4. 常用命令速查
+
+```powershell
+$env:PYTHONPATH="src"
+
+python -m code_agent_collab.cli init            # 生成/重置本地配置
+python -m code_agent_collab.cli start "任务"     # 只生成上下文包
+python -m code_agent_collab.cli run "任务"       # 跑完整多 Agent 工作流
+python -m code_agent_collab.cli demo "任务"      # 一键演示闭环
+python -m code_agent_collab.cli reflect --task "任务ID"  # 生成候选复利记录
+python -m code_agent_collab.cli pending         # 列出待确认候选
+python -m code_agent_collab.cli provider        # 查看当前 AI Provider 配置
+python -m unittest discover -s tests            # 跑全部测试
+```
+
+## 5. 常见维护任务怎么做
+
+### 新增一个 Agent 角色
+
+1. 在 `src/code_agent_collab/agents/` 新建 `<名字>.py`，继承 `BaseAgent`，实现 `run()`。
+2. 在 `agents/__init__.py` 导出并加入 `__all__`。
+3. 在 `workflow.py` 的 `agents` 列表里加入实例（决定它在哪个位置）。
+4. 在 `tests/test_workflow.py` 更新 Agent 数量断言。
+5. 更新 README 角色列表、CHANGELOG，必要时更新 VERSIONING。
+6. 跑全部测试。详细步骤见 `skills.md` 第 6 节。
+
+### 新增一个 AI Provider
+
+1. 在 `providers.py` 的 `PROVIDER_PRESETS` 加一行预设（模型、接口地址、密钥环境变量）。
+2. 需要自定义请求格式时扩展 `OpenAICompatibleProvider` 或在 `create_provider` 里加分支。
+3. 在 `tests/test_providers.py` 加预设断言。
+4. 跑测试。详细步骤见 `skills.md` 第 2.1 节。
+
+### 修改主知识库检索范围
+
+在 `src/code_agent_collab/knowledge.py` 里改：
+
+- `EXCLUDED_DIR_NAMES`：默认排除的目录（隐藏目录、99-附件、work、01-项目 等）。
+- `DEFAULT_MAX_DEPTH` / `DEFAULT_MAX_FILES`：搜索深度和最多返回文件数。
+- `DEFAULT_MAX_FILE_BYTES`：超过该大小的文件跳过。
+
+主知识库路径在 `.agent-workbench/config.json` 的 `mainVaultPath`，或用环境变量 `AGENT_WORKBENCH_MAIN_VAULT` 覆盖。
+
+### 修改本地配置
+
+编辑 `.agent-workbench/config.json`（该文件不进 Git）：
+
+```json
+{
+  "projectName": "多Agent代码协作助手",
+  "mainVaultPath": "你的主知识库路径",
+  "devVaultPath": "项目的 dev-vault 路径",
+  "mainVaultDefaultMode": "readonly",
+  "devVaultDefaultMode": "readwrite"
+}
+```
+
+## 6. 怎么测试
+
+```powershell
+$env:PYTHONPATH="src"
+python -m unittest discover -s tests
+```
+
+测试文件命名：`test_<模块名>.py`，每个功能模块至少一个测试。新增功能必须补测试。
+
+## 7. 怎么发布新版本
+
+完整规则见 `VERSIONING.md`，简化流程：
+
+1. 本地测试全部通过，Git 状态干净（`git status` 无未提交源码改动）。
+2. 更新 `CHANGELOG.md`，写明版本分类（开发版/实验版/稳定版/发布版）和变化。
+3. 用干净快照分支整理公开内容（不含本地配置、日志、测试产物），推送到 GitHub main。
+4. 打版本标签（如 `v0.5.0`）并推送。
+5. 创建 GitHub Release，写清楚：主要变化、适用对象、兼容性、安装方式、已验证内容、已知风险。
+
+注意：公开发布前必须扫描本机路径、API Key、邮箱等敏感信息（可用 `git grep` 或全文搜索）。
+
+## 8. 常见问题
+
+- **中文乱码**：Windows 下 Python 输出乱码时，先运行 `chcp 65001` 或设置 `[Console]::OutputEncoding=[Text.Encoding]::UTF8`。
+- **提示"密钥未配置"**：运行 `provider` 命令看状态，按 README 配置环境变量（`DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY`）。
+- **主知识库检索不到内容**：检查 `mainVaultPath` 是否正确、目录是否在排除列表里、任务关键词是否太口语化。
+- **`git status` 出现一堆本地文件**：候选记录、草稿、日志已被 `.gitignore` 忽略；若仍出现，检查是不是没生效或手动 add 过。
+- **真实调用很慢或失败**：默认 30 秒超时；检查网络（DeepSeek 国内直连，OpenAI 需要代理）和 Key 余额。
