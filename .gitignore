@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.agent-workbench/config.json
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+
+# 本地运行产物（不进版本库，防止 git status 噪音）
+dev-vault/pending/*.md
+dev-vault/projects/*.md
+logs/context-packs/
+logs/workflows/
