@@ -33,12 +33,14 @@ project 多Agent代码协作助手/
 ├── dev-vault/               # AI 产出区（候选记录、代码草稿），确认后才能进主知识库
 ├── logs/                    # 本地运行产物（上下文包、工作流日志）
 ├── .agent-workbench/        # 本地配置（config.json 不进 Git）
-├── MAINTENANCE.md           # 维护指南：目录说明、常见改动、发布流程
-├── skills.md                # 项目技能与经验
-├── README.md / CHANGELOG.md / VERSIONING.md / AGENTS.md
+├── 项目规则.md              # 项目规则总览（给人看）
+├── 知识地图.md              # 项目知识串联索引
+├── 维护指南.md              # 维护指南：目录说明、常见改动、发布流程
+├── 技能.md                  # 项目技能与经验
+├── README.md / 变更记录.md / 版本管理.md / AGENTS.md
 ```
 
-详细说明见 [MAINTENANCE.md](MAINTENANCE.md)。
+给人看的入口：先读 [项目规则.md](项目规则.md) 和 [知识地图.md](知识地图.md)，详细维护说明见 [维护指南.md](维护指南.md)。
 
 ## 命令
 
@@ -168,5 +170,5 @@ $env:AGENT_WORKBENCH_MAIN_VAULT="C:\path\to\your-obsidian-vault"
 
 详见：
 
-- `VERSIONING.md`
-- `CHANGELOG.md`
+- `版本管理.md`
+- `变更记录.md`
