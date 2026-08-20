@@ -52,8 +52,8 @@ class SensitiveScanTests(unittest.TestCase):
 
     def test_metadata_paths_do_not_count_as_sensitive(self) -> None:
         content = (
-            "- 来源上下文包：C:\\Users\\lwz12\\x.md\n"
-            "- 建议写入位置：C:\\Users\\lwz12\\dev-vault\\pending"
+            "- 来源上下文包：C:\\Users\\someone\\x.md\n"
+            "- 建议写入位置：C:\\Users\\someone\\dev-vault\\pending"
         )
         self.assertEqual(scan_sensitive(_body_without_metadata(content)), [])
 
