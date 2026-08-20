@@ -51,6 +51,9 @@ $env:PYTHONPATH="src"
 python -m code_agent_collab.cli start "任务目标"
 python -m code_agent_collab.cli reflect --task "任务关键词"
 python -m code_agent_collab.cli pending
+python -m code_agent_collab.cli review
+python -m code_agent_collab.cli confirm "候选关键词"
+python -m code_agent_collab.cli discard "候选关键词"
 python -m code_agent_collab.cli demo "任务目标"
 python -m code_agent_collab.cli run "任务目标"
 python -m code_agent_collab.cli provider
@@ -61,6 +64,9 @@ python -m code_agent_collab.cli provider
 - `start`：生成任务上下文包。
 - `reflect`：根据上下文包生成候选复利记录。
 - `pending`：列出等待用户确认的候选记录。
+- `review`：AI 审查候选记录；安全的自动写入主知识库，命中敏感信息的标记"待人工处理"。
+- `confirm`：人工确认候选记录并写入主知识库（仍会拦截敏感信息）。
+- `discard`：废弃候选记录，不写入主知识库。
 - `demo`：一键跑通基础闭环。
 - `run`：执行规则版多 Agent 工作流。
 - `provider`：查看当前 AI Provider 配置和可用 Provider 列表；默认显示本地模拟 Provider。
