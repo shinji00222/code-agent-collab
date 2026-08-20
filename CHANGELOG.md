@@ -8,6 +8,8 @@
 - 新增 `knowledge.py` 检索模块：关键词提取、范围/深度/文件大小限制、排除隐私与附件目录、只读保证。
 - 检索结果生成知识补充文件 `logs/context-packs/<任务ID>-knowledge.md`，供 Planner 等后续 Agent 使用。
 - 新增 8 项检索相关测试。
+- 支持 `AGENT_WORKBENCH_MAIN_VAULT` 环境变量覆盖主知识库路径，方便首次使用者快速配置。
+- README 增加"首次使用与知识库配置"章节。
 
 ### 边界
 

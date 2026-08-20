@@ -63,6 +63,7 @@
 - 怎么做：`extract_keywords`（中英文关键词 + 停用字过滤）→ `search_knowledge`（限制深度、文件数、文件大小）→ `render_knowledge_note` 输出补充文件。
 - 怎么验证：`tests/test_knowledge.py` 覆盖关键词提取、命中、排除目录、只读性和 Agent 集成。
 - 常见坑：中文没有内置分词，长句滑窗会切出噪音词，需用停用字过滤；主知识库可能很大，必须限制深度和文件数，并排除 `99-附件`、`work`、`01-项目` 等目录；检索只读，绝不写入主知识库。
+- 主知识库路径可通过 `AGENT_WORKBENCH_MAIN_VAULT` 环境变量覆盖，优先级高于 `.agent-workbench/config.json`。
 
 ## 常用命令
 

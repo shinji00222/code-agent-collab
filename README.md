@@ -98,6 +98,39 @@ $env:PYTHONPATH="src"
 python -m unittest discover -s tests
 ```
 
+## 首次使用与知识库配置
+
+1. 安装 Python 3.11 或更高版本，克隆本仓库。
+2. 在项目根目录生成配置文件：
+
+```powershell
+$env:PYTHONPATH="src"
+python -m code_agent_collab.cli init
+```
+
+3. 编辑 `.agent-workbench/config.json`（该文件已被 `.gitignore` 忽略，不会提交），把路径换成你自己的：
+
+```json
+{
+  "projectName": "多Agent代码协作助手",
+  "mainVaultPath": "C:\\path\\to\\your-obsidian-vault",
+  "devVaultPath": "C:\\path\\to\\this-project\\dev-vault",
+  "mainVaultDefaultMode": "readonly",
+  "devVaultDefaultMode": "readwrite"
+}
+```
+
+- `mainVaultPath`：你的主知识库（Obsidian 或其他 Markdown 文件夹），程序只读检索，绝不写入。
+- `devVaultPath`：项目内 `dev-vault` 文件夹，AI 生成的草稿和候选经验写在这里。
+
+不想编辑 JSON，也可以直接设置环境变量（优先级高于 `config.json`）：
+
+```powershell
+$env:AGENT_WORKBENCH_MAIN_VAULT="C:\path\to\your-obsidian-vault"
+```
+
+没有现成知识库也可以运行：KnowledgeAgent 会提示未检索到相关内容，其余功能不受影响。
+
 ## 配置
 
 真实本地配置文件：
