@@ -9,11 +9,11 @@
 
 ## 当前版本
 
-当前版本：`v0.4.0`（发布版）
+当前版本：`v0.5.0`（开发版）
 
-阶段定位：CoderAgent 草稿生成。
+阶段定位：主知识库只读检索。
 
-当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿。
+当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿。KnowledgeAgent 会从主知识库只读检索与任务相关的文档，生成知识补充文件，供后续 Agent 使用。
 
 ## 核心原则
 
@@ -21,7 +21,7 @@
 - AI 自动生成内容先进入 `dev-vault`。
 - 候选复利记录先进入 `dev-vault/pending`。
 - 写入主知识库必须经过用户确认。
-- CoordinatorAgent、KnowledgeAgent、ValidatorAgent 和 ReflectorAgent 仍是规则版；PlannerAgent 和 CoderAgent 支持通过 Provider 调用模型。
+- CoordinatorAgent、ValidatorAgent 和 ReflectorAgent 仍是规则版；PlannerAgent 和 CoderAgent 支持通过 Provider 调用模型；KnowledgeAgent 从主知识库只读检索相关文档。
 
 ## 命令
 
@@ -78,7 +78,7 @@ $env:AGENT_WORKBENCH_API_KEY_ENV="你的密钥环境变量名"
 当前版本内置 6 个 Agent：
 
 - `CoordinatorAgent`：拆分任务。
-- `KnowledgeAgent`：读取项目内知识。
+- `KnowledgeAgent`：从主知识库只读检索相关文档，生成知识补充文件。
 - `PlannerAgent`：生成保守执行计划。
 - `CoderAgent`：生成代码草稿，只写入 `dev-vault/projects`，不直接修改正式源码。
 - `ValidatorAgent`：检查上下文包和边界。

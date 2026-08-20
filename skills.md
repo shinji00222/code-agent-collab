@@ -56,6 +56,14 @@
 5. 更新 README 角色列表、CHANGELOG，必要时更新 VERSIONING.md。
 6. 跑全部测试，确认通过后再提交。
 
+## 7. 主知识库只读检索
+
+- 做什么：`KnowledgeAgent` 从任务目标提取关键词，只读检索主知识库中的相关 Markdown，生成 `logs/context-packs/<任务ID>-knowledge.md` 知识补充文件。
+- 为什么：让长期知识参与任务上下文，同时保证主知识库不被自动污染。
+- 怎么做：`extract_keywords`（中英文关键词 + 停用字过滤）→ `search_knowledge`（限制深度、文件数、文件大小）→ `render_knowledge_note` 输出补充文件。
+- 怎么验证：`tests/test_knowledge.py` 覆盖关键词提取、命中、排除目录、只读性和 Agent 集成。
+- 常见坑：中文没有内置分词，长句滑窗会切出噪音词，需用停用字过滤；主知识库可能很大，必须限制深度和文件数，并排除 `99-附件`、`work`、`01-项目` 等目录；检索只读，绝不写入主知识库。
+
 ## 常用命令
 
 ```powershell
