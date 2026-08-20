@@ -2,14 +2,24 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from .config import save_default_config
 from .context_pack import create_context_pack
 from .demo import run_demo
 from .reflection import create_reflection, list_pending_notes
-from .providers import ProviderConfig, create_provider
+from .providers import SUPPORTED_PROVIDERS, ProviderConfig, create_provider
 from .workflow import run_workflow
+
+
+def _ensure_utf8_stdio() -> None:
+    if sys.platform == "win32":
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError):
+                pass
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -74,6 +84,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _ensure_utf8_stdio()
     parser = _build_parser()
     args = parser.parse_args(argv)
     project_root = Path(getattr(args, "project_root", ".")).resolve()
@@ -134,11 +145,13 @@ def main(argv: list[str] | None = None) -> int:
         config = ProviderConfig.from_env()
         provider = create_provider(config)
         print(f"当前 Provider：{config.name}")
-        print(f"模型：{config.model}")
+        print(f"模型：{config.model or '未设置'}")
         print(f"接口地址：{config.base_url or '本地模拟，不联网'}")
         print(f"密钥环境变量：{config.api_key_env or '未配置'}")
         key_configured = bool(config.api_key_env and os.getenv(config.api_key_env))
         print(f"密钥状态：{'已配置' if key_configured else '未配置'}")
+        print("可用 Provider：" + ", ".join(SUPPORTED_PROVIDERS))
+        print("切换示例：$env:AGENT_WORKBENCH_PROVIDER='deepseek'")
         return 0
 
     parser.error("未知命令")

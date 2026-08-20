@@ -4,6 +4,7 @@ from .knowledge import KnowledgeAgent
 from .planner import PlannerAgent
 from .validator import ValidatorAgent
 from .reflector import ReflectorAgent
+from .coder import CoderAgent
 
 __all__ = [
     "AgentContext",
@@ -14,4 +15,5 @@ __all__ = [
     "PlannerAgent",
     "ValidatorAgent",
     "ReflectorAgent",
+    "CoderAgent",
 ]

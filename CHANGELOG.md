@@ -1,5 +1,27 @@
 # 更新日志
 
+## v0.4.0 - 2026-08-20（发布版）
+
+### 新增
+
+- 增加 CoderAgent 行动 Agent，根据任务和上下文包生成代码草稿。
+- CoderAgent 草稿只写入 `dev-vault/projects`，不直接修改正式源码。
+- 工作流扩展为 6 个 Agent：协调、知识、计划、编码、验证、复盘。
+- 增加项目 `skills.md`，沉淀可复用开发技能和新增 Agent 标准流程。
+- 增加 `docs/项目企划.md`，记录项目目标、角色、Provider 思路和权限边界。
+- AGENTS.md 增加版本分类要求与技能沉淀要求。
+- 修正 DeepSeek 默认模型为官方 `deepseek-chat`，集中预留 DeepSeek/OpenAI/OpenAI 兼容预设。
+- 增加 `AGENT_WORKBENCH_MODEL`、`AGENT_WORKBENCH_BASE_URL`、`AGENT_WORKBENCH_API_KEY_ENV` 环境变量覆盖。
+- `provider` 命令显示可用 Provider 列表，并修复 Windows 管道输出中文乱码。
+- 修复真实 Provider 调用时日志显示固定为 `openai-compatible` 的问题，现在按实际配置显示（如 `deepseek`）。
+
+### 边界
+
+- 该版本已通过本地测试与真实 DeepSeek 调用验证，属于发布版。
+- CoderAgent 默认使用 mock Provider，草稿为模拟内容；接真实模型前需先验证。
+- 草稿未经 ValidatorAgent 和人工检查，不能直接合并到正式源码。
+- 主知识库保持只读。
+
 ## v0.3.0 - 2026-08-19
 
 ### 新增

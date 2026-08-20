@@ -9,11 +9,11 @@
 
 ## 当前版本
 
-当前版本：`v0.3.0`
+当前版本：`v0.4.0`（发布版）
 
-阶段定位：Provider 接入实验版。
+阶段定位：CoderAgent 草稿生成。
 
-当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 可以调用真实模型生成计划。
+当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿。
 
 ## 核心原则
 
@@ -21,7 +21,7 @@
 - AI 自动生成内容先进入 `dev-vault`。
 - 候选复利记录先进入 `dev-vault/pending`。
 - 写入主知识库必须经过用户确认。
-- CoordinatorAgent、KnowledgeAgent、ValidatorAgent 和 ReflectorAgent 仍是规则版；PlannerAgent 支持通过 Provider 调用模型。
+- CoordinatorAgent、KnowledgeAgent、ValidatorAgent 和 ReflectorAgent 仍是规则版；PlannerAgent 和 CoderAgent 支持通过 Provider 调用模型。
 
 ## 命令
 
@@ -44,7 +44,7 @@ python -m code_agent_collab.cli provider
 - `pending`：列出等待用户确认的候选记录。
 - `demo`：一键跑通基础闭环。
 - `run`：执行规则版多 Agent 工作流。
-- `provider`：查看当前 AI Provider 配置；默认显示本地模拟 Provider。
+- `provider`：查看当前 AI Provider 配置和可用 Provider 列表；默认显示本地模拟 Provider。
 
 切换到 DeepSeek：
 
@@ -60,13 +60,27 @@ $env:AGENT_WORKBENCH_PROVIDER="openai"
 $env:OPENAI_API_KEY="你的密钥"
 ```
 
+模型默认值：
+
+- DeepSeek：`deepseek-chat`（可换成 `deepseek-reasoner`）
+- OpenAI：`gpt-5-mini`
+
+需要覆盖默认模型、接口地址或密钥环境变量时（例如接入 OpenAI 兼容服务）：
+
+```powershell
+$env:AGENT_WORKBENCH_MODEL="你的模型名"
+$env:AGENT_WORKBENCH_BASE_URL="https://你的兼容接口/v1"
+$env:AGENT_WORKBENCH_API_KEY_ENV="你的密钥环境变量名"
+```
+
 ## 多 Agent 角色
 
-当前版本内置 5 个规则 Agent：
+当前版本内置 6 个 Agent：
 
 - `CoordinatorAgent`：拆分任务。
 - `KnowledgeAgent`：读取项目内知识。
 - `PlannerAgent`：生成保守执行计划。
+- `CoderAgent`：生成代码草稿，只写入 `dev-vault/projects`，不直接修改正式源码。
 - `ValidatorAgent`：检查上下文包和边界。
 - `ReflectorAgent`：确认复盘进入候选区。
 
