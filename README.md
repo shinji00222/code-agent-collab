@@ -57,6 +57,7 @@ python -m code_agent_collab.cli discard "候选关键词"
 python -m code_agent_collab.cli demo "任务目标"
 python -m code_agent_collab.cli run "任务目标"
 python -m code_agent_collab.cli provider
+python -m code_agent_collab.webui
 ```
 
 ## 命令说明
@@ -70,6 +71,7 @@ python -m code_agent_collab.cli provider
 - `demo`：一键跑通基础闭环。
 - `run`：执行规则版多 Agent 工作流。
 - `provider`：查看当前 AI Provider 配置和可用 Provider 列表；默认显示本地模拟 Provider。
+- `webui`：启动 PowerShell 风格的本机网页终端（默认 http://127.0.0.1:8080），在浏览器里输入命令。
 
 切换到 DeepSeek：
 
