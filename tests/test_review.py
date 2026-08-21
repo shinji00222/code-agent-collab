@@ -59,7 +59,7 @@ class SensitiveScanTests(unittest.TestCase):
 
 
 class ReviewFlowTests(unittest.TestCase):
-    def test_mock_review_writes_to_main_vault(self) -> None:
+    def test_mock_review_holds_for_human_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root, vault = _make_project(tmp)
             note = _write_note(project_root, "2026-08-20-任务A-复利候选.md", "内容安全，值得记录。")
@@ -71,12 +71,12 @@ class ReviewFlowTests(unittest.TestCase):
                 now=datetime(2026, 8, 20, 15, 0, 0),
             )
 
-            self.assertEqual(result.status, "已入库")
-            self.assertIsNotNone(result.target_path)
-            assert result.target_path is not None
-            self.assertTrue(result.target_path.exists())
-            self.assertTrue(result.target_path.is_relative_to(vault))
-            self.assertIn("已入库", note.read_text(encoding="utf-8"))
+            self.assertEqual(result.status, "待人工确认")
+            self.assertIsNone(result.target_path)
+            self.assertFalse(list(vault.rglob("*.md")))
+            note_content = note.read_text(encoding="utf-8")
+            self.assertIn("待人工确认", note_content)
+            self.assertIn("AI 审查通过", note_content)
 
     def test_sensitive_note_is_held_for_human(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -143,6 +143,29 @@ class ReviewFlowTests(unittest.TestCase):
             found = find_pending_path(project_root, "任务F")
 
             self.assertEqual(found, note)
+
+    def test_confirm_uses_ai_suggested_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root, vault = _make_project(tmp)
+            (vault / "02-知识" / "01-测试").mkdir(parents=True)
+            note = _write_note(project_root, "2026-08-20-任务G-复利候选.md", "内容安全。")
+            content = note.read_text(encoding="utf-8")
+            note.write_text(
+                content.rstrip() + "\n- AI建议写入位置：02-知识/01-测试\n",
+                encoding="utf-8",
+            )
+
+            result = confirm_pending_note(
+                project_root,
+                note,
+                now=datetime(2026, 8, 20, 15, 0, 0),
+            )
+
+            self.assertEqual(result.status, "已确认入库")
+            self.assertIsNotNone(result.target_path)
+            assert result.target_path is not None
+            self.assertEqual(result.target_path.parent, vault / "02-知识" / "01-测试")
+            self.assertTrue(result.target_path.exists())
 
 
 if __name__ == "__main__":

@@ -9,11 +9,11 @@
 
 ## 当前版本
 
-当前版本：`v0.7.1`（修订版）
+当前版本：`v0.8.0`（开发版）
 
-阶段定位：主知识库只读检索 + AI 审查入库 + Web 终端。
+阶段定位：主知识库只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + Web 终端。
 
-当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿。KnowledgeAgent 会从主知识库只读检索与任务相关的文档，生成知识补充文件，供后续 Agent 使用；候选知识可经 AI 审查后入库或转人工处理；提供 PowerShell 风格的本地网页终端。关闭网页终端程序会立即停止正在运行的命令，AI 调用不会在后台继续。
+当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿；新增 ReviewerAgent 在 CoderAgent 之后对代码草稿做规则版评审（检查草稿是否存在、是否太空、敏感信息、越权）；新增 OrchestratorAgent 按任务复杂度从三档预设模板选择执行方案（`run-adaptive` 命令，阶段内并行）。KnowledgeAgent 会从主知识库只读检索与任务相关的文档，生成知识补充文件，供后续 Agent 使用；候选知识经 AI 审查后只标记"待人工确认"，由用户 `confirm` 确认后才写入主知识库，命中敏感信息的转人工处理；提供 PowerShell 风格的本地网页终端。关闭网页终端程序会立即停止正在运行的命令，AI 调用不会在后台继续。
 
 ## 核心原则
 
@@ -21,7 +21,7 @@
 - AI 自动生成内容先进入 `dev-vault`。
 - 候选复利记录先进入 `dev-vault/pending`。
 - 写入主知识库必须经过用户确认。
-- CoordinatorAgent、ValidatorAgent 和 ReflectorAgent 仍是规则版；PlannerAgent 和 CoderAgent 支持通过 Provider 调用模型；KnowledgeAgent 从主知识库只读检索相关文档。
+- CoordinatorAgent、ValidatorAgent 和 ReflectorAgent 仍是规则版；PlannerAgent 和 CoderAgent 支持通过 Provider 调用模型；OrchestratorAgent 按复杂度从预设模板选择执行方案；ReviewerAgent 规则版评审草稿；KnowledgeAgent 从主知识库只读检索相关文档。
 
 ## 项目结构
 
@@ -56,6 +56,8 @@ python -m code_agent_collab.cli confirm "候选关键词"
 python -m code_agent_collab.cli discard "候选关键词"
 python -m code_agent_collab.cli demo "任务目标"
 python -m code_agent_collab.cli run "任务目标"
+python -m code_agent_collab.cli run-adaptive "任务目标"
+python -m code_agent_collab.cli approve "任务ID或关键词"
 python -m code_agent_collab.cli provider
 python -m code_agent_collab.webui
 ```
@@ -65,11 +67,13 @@ python -m code_agent_collab.webui
 - `start`：生成任务上下文包。
 - `reflect`：根据上下文包生成候选复利记录。
 - `pending`：列出等待用户确认的候选记录。
-- `review`：AI 审查候选记录；安全的自动写入主知识库，命中敏感信息的标记"待人工处理"。
+- `review`：AI 审查候选记录；审查通过只标记"待人工确认"并记录 AI 建议的写入位置，**不自动写入主知识库**；命中敏感信息的标记"待人工处理"。
 - `confirm`：人工确认候选记录并写入主知识库（仍会拦截敏感信息）。
 - `discard`：废弃候选记录，不写入主知识库。
 - `demo`：一键跑通基础闭环。
 - `run`：执行规则版多 Agent 工作流。
+- `run-adaptive`：生成半动态自适应方案并等待人工审批（不自动执行）；主控按任务复杂度从三档预设模板选择 worker 方案（SIMPLE=1 / MEDIUM=2 / COMPLEX=4），阶段内并行。
+- `approve`：人工批准 `run-adaptive` 生成的方案，批准后执行 workers（阶段间串行、阶段内并行），产出工作流日志与候选复盘。
 - `provider`：查看当前 AI Provider 配置和可用 Provider 列表；默认显示本地模拟 Provider。
 - `webui`：启动 PowerShell 风格的本机网页终端（默认 http://127.0.0.1:8080），在浏览器里输入命令。
 
@@ -102,12 +106,14 @@ $env:AGENT_WORKBENCH_API_KEY_ENV="你的密钥环境变量名"
 
 ## 多 Agent 角色
 
-当前版本内置 6 个 Agent：
+当前版本内置 8 个 Agent：
 
-- `CoordinatorAgent`：拆分任务。
+- `CoordinatorAgent`：拆分任务（默认流水线）。
 - `KnowledgeAgent`：从主知识库只读检索相关文档，生成知识补充文件。
 - `PlannerAgent`：生成保守执行计划。
-- `CoderAgent`：生成代码草稿，只写入 `dev-vault/projects`，不直接修改正式源码。
+- `CoderAgent`：生成代码草稿，只写入 `dev-vault/projects`，不直接修改正式源码；支持 `worker_label` 以多实例并行写独立草稿。
+- `ReviewerAgent`：规则版评审代码草稿（存在性 / 内容长度 / 敏感信息 / 越权），支持评审多份草稿。
+- `OrchestratorAgent`：半动态主控，按任务复杂度从三档预设模板选择执行方案（`run-adaptive`）。
 - `ValidatorAgent`：检查上下文包和边界。
 - `ReflectorAgent`：确认复盘进入候选区。
 

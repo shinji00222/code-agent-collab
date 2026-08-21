@@ -4,20 +4,29 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .agents import (
-    AgentContext,
-    AgentResult,
-    CoordinatorAgent,
-    CoderAgent,
-    KnowledgeAgent,
-    PlannerAgent,
-    ReflectorAgent,
-    ValidatorAgent,
-)
+from .agents import AgentContext, AgentResult, create_agent
 from .context_pack import ContextPackResult, create_context_pack
 from .file_utils import ensure_dir, write_text
 from .reflection import ReflectionResult, create_reflection
-from .providers import create_provider
+from .providers import AIProvider, create_provider
+
+
+def build_workflow_agents(provider: AIProvider) -> list:
+    """构建默认流水线 Agent 列表（供 run_workflow 使用）。
+
+    升级空间：接入 OrchestratorAgent 后，由主控按预设模板动态构建 workers，
+    本函数保留作为"默认全流程"方案，不删除。
+    """
+    roles = [
+        "CoordinatorAgent",
+        "KnowledgeAgent",
+        "PlannerAgent",
+        "CoderAgent",
+        "ReviewerAgent",
+        "ValidatorAgent",
+        "ReflectorAgent",
+    ]
+    return [create_agent(role, provider=provider) for role in roles]
 
 
 @dataclass(frozen=True)
@@ -72,14 +81,8 @@ def run_workflow(project_root: Path, goal: str) -> WorkflowResult:
         task_id=context_pack.task_id,
         context_pack_path=context_pack.output_path,
     )
-    agents = [
-        CoordinatorAgent(),
-        KnowledgeAgent(),
-        PlannerAgent(provider=create_provider()),
-        CoderAgent(provider=create_provider()),
-        ValidatorAgent(),
-        ReflectorAgent(),
-    ]
+    provider = create_provider()
+    agents = build_workflow_agents(provider)
 
     results: list[AgentResult] = []
     for agent in agents:

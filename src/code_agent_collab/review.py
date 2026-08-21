@@ -16,7 +16,7 @@ SENSITIVE_PATTERNS: dict[str, re.Pattern] = {
     "邮箱": re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+"),
 }
 
-METADATA_PREFIXES = ("来源上下文包：", "建议写入位置：")
+METADATA_PREFIXES = ("来源上下文包：", "建议写入位置：", "- AI建议写入位置：")
 
 DEFAULT_VAULT_SUBDIR = "04-知识/02-Codex知识/04-复盘"
 
@@ -41,6 +41,17 @@ def scan_sensitive(content: str) -> list[str]:
         if pattern.search(content):
             found.append(name)
     return found
+
+
+AI_TARGET_PREFIX = "- AI建议写入位置："
+
+
+def _read_ai_target(content: str) -> str:
+    """读取候选记录中 AI 建议的写入位置（相对主知识库路径）。"""
+    for line in content.splitlines():
+        if line.startswith(AI_TARGET_PREFIX):
+            return line.removeprefix(AI_TARGET_PREFIX).strip().strip("/\\")
+    return ""
 
 
 def _body_without_metadata(content: str) -> str:
@@ -159,16 +170,10 @@ def review_pending_note(
     if verdict != "approve":
         return _mark_status(path, "待人工处理", reason or "AI 判定不建议入库", now)
 
-    target_dir = _resolve_target(project_root, ai_target)
-    target_path = _write_to_main_vault(project_root, content, target_dir, path.name)
-    relative = target_path.relative_to(vault)
-    _mark_status(path, f"已入库：{relative}", f"AI 审查通过，写入 {relative}", now)
-    return ReviewResult(
-        path=path,
-        status="已入库",
-        reason=f"AI 审查通过，写入 {relative}",
-        target_path=target_path,
-    )
+    # AI 审查通过：只记录 AI 建议的写入位置，绝不自动入库，必须人工确认
+    if ai_target:
+        write_text(path, content.rstrip() + f"\n{AI_TARGET_PREFIX}{ai_target}\n")
+    return _mark_status(path, "待人工确认", "AI 审查通过，建议入库，等待人工确认", now)
 
 
 def confirm_pending_note(project_root: Path, path: Path, now: datetime | None = None) -> ReviewResult:
@@ -183,7 +188,8 @@ def confirm_pending_note(project_root: Path, path: Path, now: datetime | None = 
             now,
         )
     vault = _main_vault(project_root)
-    target_dir = _resolve_target(project_root, "")
+    ai_target = _read_ai_target(content)
+    target_dir = _resolve_target(project_root, ai_target)
     target_path = _write_to_main_vault(project_root, content, target_dir, path.name)
     relative = target_path.relative_to(vault)
     _mark_status(path, f"已确认入库：{relative}", f"人工确认，写入 {relative}", now)

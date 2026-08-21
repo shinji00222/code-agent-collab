@@ -10,7 +10,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
 
 ALLOWED_COMMANDS = {
@@ -51,46 +51,784 @@ PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>多Agent工作台 - 终端</title>
+<title>多Agent工作台</title>
 <style>
+  :root {
+    --bg: #171717;
+    --panel: #202020;
+    --panel-2: #2c2c2c;
+    --panel-3: #323232;
+    --line: #343434;
+    --line-soft: #292929;
+    --text: #e1e1e1;
+    --muted: #a0a0a0;
+    --faint: #747474;
+    --accent: #d7d7d7;
+    --ok: #8fd7c7;
+    --bad: #ff9b8d;
+  }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; background: #0c0c0c; color: #e6e6e6;
-               font-family: Consolas, "Courier New", monospace; }
-  body { display: flex; flex-direction: column; overflow: hidden; }
-  #titlebar { background: #012456; color: #fff; padding: 6px 12px;
-              font-size: 13px; user-select: none; }
-  #output { margin: 0; padding: 12px 14px; white-space: pre-wrap; word-break: break-all;
-            font-size: 14px; line-height: 1.5; flex: 1;
-            overflow-y: auto; }
-  #input-line { display: flex; align-items: center; padding: 8px 14px;
-                border-top: 1px solid #333; background: #111; }
-  #prompt { color: #4ec9b0; white-space: nowrap; font-size: 14px; }
-  #cmd { flex: 1; background: transparent; border: none; outline: none;
-         color: #e6e6e6; font-family: inherit; font-size: 14px; }
-  .out { color: #e6e6e6; }
-  .err { color: #f48771; }
-  .ok { color: #6a9955; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei UI", Arial, sans-serif;
+    letter-spacing: 0;
+  }
+  button, input { font: inherit; }
+  button { color: inherit; }
+  .windowbar {
+    height: 54px;
+    border-bottom: 1px solid #202020;
+    background: #202020;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px;
+    color: #a7a7a7;
+    user-select: none;
+  }
+  .window-left,
+  .window-menu,
+  .window-controls {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .window-icon {
+    width: 18px;
+    height: 18px;
+    color: #9b9b9b;
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    line-height: 1;
+  }
+  .window-menu {
+    gap: 36px;
+    color: #9c9c9c;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .window-controls {
+    gap: 28px;
+    color: #f0f0f0;
+    font-size: 18px;
+  }
+  .app {
+    height: calc(100vh - 54px);
+    display: grid;
+    grid-template-columns: 364px minmax(0, 1fr) 452px;
+    background: var(--bg);
+  }
+  body.right-collapsed .app {
+    grid-template-columns: 364px minmax(0, 1fr) 0;
+  }
+  body.left-collapsed .app {
+    grid-template-columns: 0 minmax(0, 1fr) 452px;
+  }
+  body.left-collapsed.right-collapsed .app {
+    grid-template-columns: 0 minmax(0, 1fr) 0;
+  }
+  .sidebar {
+    min-width: 0;
+    border-right: 1px solid var(--line);
+    background: #1f1f1f;
+    padding: 18px 11px 14px;
+    display: flex;
+    flex-direction: column;
+  }
+  .brand {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 8px;
+    font-size: 26px;
+    font-weight: 700;
+    color: #d9d9d9;
+  }
+  .brand small {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .side-actions {
+    display: grid;
+    gap: 2px;
+    margin: 20px 0 32px;
+  }
+  .side-button,
+  .project-row,
+  .recent-row {
+    width: 100%;
+    min-height: 42px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #c8c8c8;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    text-align: left;
+    cursor: pointer;
+    font-size: 17px;
+  }
+  .nav-ico {
+    width: 24px;
+    color: #c6c6c6;
+    display: inline-grid;
+    place-items: center;
+    font-size: 19px;
+  }
+  .side-button:hover,
+  .project-row:hover,
+  .recent-row:hover { background: #282828; }
+  .side-button:disabled,
+  .project-row:disabled,
+  .recent-row:disabled,
+  .share-button:disabled,
+  .location-button:disabled {
+    cursor: default;
+  }
+  .side-button:disabled:hover,
+  .project-row:disabled:hover,
+  .recent-row:disabled:hover { background: transparent; }
+  .project-row.active {
+    background: #333333;
+    color: #f0f0f0;
+  }
+  .project-row.sub {
+    padding-left: 48px;
+    min-height: 34px;
+    font-size: 15px;
+  }
+  .project-row.muted {
+    color: #7a7a7a;
+  }
+  .section-label {
+    margin: 0 12px 8px;
+    color: #898989;
+    font-size: 16px;
+    font-weight: 650;
+  }
+  .project-list,
+  .recent-list {
+    display: grid;
+    gap: 2px;
+    margin-bottom: 24px;
+  }
+  .project-row,
+  .recent-row {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .recent-list {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .spacer { flex: 1; min-height: 12px; }
+  .userbar {
+    border-top: 1px solid var(--line);
+    padding: 12px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .topbar {
+    height: 68px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 22px;
+    background: #191919;
+  }
+  .title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    font-size: 20px;
+    font-weight: 650;
+  }
+  .title span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .top-actions { display: flex; align-items: center; gap: 8px; color: #d2d2d2; }
+  .top-ellipsis {
+    color: #888;
+    font-size: 22px;
+    margin-left: 2px;
+  }
+  .ghost-button {
+    min-height: 34px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #222;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .icon-button {
+    width: 42px;
+    height: 42px;
+    border: 0;
+    border-radius: 12px;
+    background: #242424;
+    color: #d9d9d9;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+  .icon-button:hover { background: #303030; }
+  .icon-button:focus-visible {
+    outline: 1px solid #d0d0d0;
+    outline-offset: 0;
+  }
+  .icon-button[aria-pressed="false"] {
+    color: #777;
+    background: #1f1f1f;
+  }
+  .icon {
+    position: relative;
+    width: 17px;
+    height: 17px;
+    display: block;
+  }
+  .icon-controls::before,
+  .icon-controls::after {
+    content: "";
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    height: 1.6px;
+    border-radius: 1px;
+    background: currentColor;
+  }
+  .icon-controls::before { top: 5px; }
+  .icon-controls::after { bottom: 5px; }
+  .icon-controls span::before,
+  .icon-controls span::after {
+    content: "";
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    background: #252525;
+  }
+  .icon-controls span::before { top: 2px; left: 5px; }
+  .icon-controls span::after { bottom: 2px; right: 5px; }
+  .icon-terminal::before {
+    content: "";
+    position: absolute;
+    inset: 3px 2px;
+    border: 1.6px solid currentColor;
+    border-radius: 2px;
+  }
+  .icon-terminal::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    right: 5px;
+    bottom: 5px;
+    height: 1.6px;
+    border-radius: 1px;
+    background: currentColor;
+  }
+  .icon-sidebar::before {
+    content: "";
+    position: absolute;
+    inset: 2px 3px;
+    border: 1.6px solid currentColor;
+    border-radius: 3px;
+  }
+  .icon-sidebar::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 9px;
+    width: 1.6px;
+    border-radius: 1px;
+    background: currentColor;
+  }
+  .content {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 74px 0 300px;
+  }
+  .thread {
+    width: min(1104px, calc(100% - 72px));
+    margin: 0 auto;
+  }
+  .event {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin: 24px 0;
+  }
+  .event-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #9a9a9a;
+    font-size: 14px;
+  }
+  .event-rule {
+    height: 1px;
+    background: var(--line);
+    flex: 1;
+  }
+  .assistant-text {
+    color: #e2e2e2;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+  .assistant-text p { margin: 0 0 12px; }
+  .user-pill {
+    justify-self: end;
+    max-width: 68%;
+    border-radius: 22px;
+    background: #262626;
+    padding: 10px 16px;
+    color: #eeeeee;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .resource {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #202020;
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .resource-main {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .resource-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 8px;
+    background: #111;
+    display: grid;
+    place-items: center;
+    color: #d8d8d8;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .resource-title { font-weight: 650; font-size: 17px; }
+  .resource-subtitle { color: var(--muted); font-size: 15px; margin-top: 3px; }
+  .output {
+    margin: 0;
+    max-height: 184px;
+    overflow: auto;
+    border: 0;
+    background: #111111;
+    color: #d7d7d7;
+    padding: 8px 14px 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  body.output-collapsed .output {
+    display: none;
+  }
+  .output .ok { color: #d7d7d7; }
+  .output .err { color: var(--bad); }
+  .output .cmdline { color: #f0f0f0; }
+  .composer {
+    position: fixed;
+    left: 364px;
+    right: 452px;
+    bottom: 0;
+    padding: 10px 0 0;
+    background: linear-gradient(rgba(23, 23, 23, 0), #171717 28%, #171717);
+  }
+  body.right-collapsed .composer {
+    right: 0;
+  }
+  body.left-collapsed .composer {
+    left: 0;
+  }
+  .composer-box {
+    width: min(1104px, 64%, calc(100% - 72px));
+    margin: 0 auto;
+    border: 1px solid var(--line);
+    border-radius: 26px 26px 0 0;
+    background: #2c2c2c;
+    box-shadow: 0 18px 52px rgba(0, 0, 0, 0.32);
+    padding: 11px 14px 9px;
+  }
+  .terminal-dock {
+    width: 100%;
+    margin: 0;
+    border: 1px solid var(--line);
+    border-top: 0;
+    border-radius: 0;
+    background: #111111;
+    overflow: hidden;
+  }
+  body.output-collapsed .terminal-dock {
+    display: none;
+  }
+  body.output-collapsed .composer-box {
+    border-radius: 26px;
+  }
+  #goal {
+    width: 100%;
+    min-height: 38px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: #f1f1f1;
+    padding: 2px 6px;
+    font-size: 15px;
+  }
+  #goal::placeholder { color: #a5a5a5; }
+  .composer-actions {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+  }
+  .composer-actions .fill {
+    flex: 1;
+  }
+  .small-button {
+    min-height: 28px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #303030;
+    color: #d8d8d8;
+    padding: 4px 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .send-button {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 50%;
+    background: #ececec;
+    color: #151515;
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .right-panel {
+    min-width: 0;
+    border-left: 1px solid var(--line);
+    background: #1b1b1b;
+    padding: 18px 18px;
+  }
+  body.right-collapsed .right-panel {
+    display: none;
+  }
+  body.left-collapsed .sidebar {
+    display: none;
+  }
+  .inspector {
+    border-radius: 24px;
+    background: #2c2c2c;
+    padding: 18px;
+  }
+  .inspector h2 {
+    margin: 0;
+    color: #bdbdbd;
+    font-size: 15px;
+  }
+  .panel-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .panel-title-row h3 {
+    margin: 0;
+  }
+  .panel-plus {
+    border: 0;
+    background: transparent;
+    color: #9b9b9b;
+    font-size: 24px;
+    line-height: 1;
+    cursor: default;
+    padding: 0 2px;
+  }
+  .info-list {
+    display: grid;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #444;
+  }
+  .info-row {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 12px;
+    color: #dedede;
+    font-size: 14px;
+  }
+  .info-row span:first-child { color: #9b9b9b; }
+  .muted-row { color: #8e8e8e; }
+  .panel-section {
+    padding-top: 18px;
+  }
+  .panel-section h3 {
+    margin: 0 0 12px;
+    color: #9c9c9c;
+    font-size: 14px;
+  }
+  .process {
+    border-radius: 8px;
+    background: #202020;
+    padding: 10px 12px;
+    color: #dedede;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .source-list {
+    display: grid;
+    gap: 8px;
+  }
+  .source-item {
+    min-width: 0;
+    border-radius: 8px;
+    background: #202020;
+    color: #bdbdbd;
+    padding: 9px 10px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 13px;
+  }
+  @media (max-width: 1600px) {
+    .app { grid-template-columns: 290px minmax(0, 1fr) 330px; }
+    body.right-collapsed .app { grid-template-columns: 290px minmax(0, 1fr) 0; }
+    body.left-collapsed .app { grid-template-columns: 0 minmax(0, 1fr) 330px; }
+    body.left-collapsed.right-collapsed .app { grid-template-columns: 0 minmax(0, 1fr) 0; }
+    .composer { left: 290px; right: 330px; }
+    body.right-collapsed .composer { right: 0; }
+    body.left-collapsed .composer { left: 0; }
+    .thread { width: min(960px, calc(100% - 48px)); }
+    .composer-box { width: min(960px, 64%, calc(100% - 48px)); }
+    .terminal-dock { width: 100%; }
+    .side-button, .project-row, .recent-row { font-size: 15px; min-height: 38px; }
+    .section-label { font-size: 13px; }
+    .title { font-size: 16px; }
+    #goal { font-size: 15px; }
+    .assistant-text, .user-pill { font-size: 14px; }
+    .resource { padding: 12px 14px; }
+    .resource-icon { width: 42px; height: 42px; font-size: 12px; }
+    .resource-title { font-size: 15px; }
+    .resource-subtitle { font-size: 13px; }
+    .info-row { font-size: 13px; }
+    .inspector h2 { font-size: 14px; }
+    .panel-section h3 { font-size: 14px; }
+    .source-item { font-size: 13px; }
+    .process { font-size: 12px; }
+  }
+  @media (max-width: 1250px) {
+    .app { grid-template-columns: 300px minmax(0, 1fr); }
+    .right-panel { display: none; }
+    .composer { right: 0; left: 300px; }
+    .thread { width: min(900px, calc(100% - 40px)); }
+    .composer-box { width: min(900px, 70%, calc(100% - 40px)); }
+    .terminal-dock { width: 100%; }
+  }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .topbar { padding: 0 14px; }
+    .thread { width: calc(100% - 28px); }
+    .composer-box { width: calc(100% - 28px); }
+    .terminal-dock { width: 100%; }
+    .composer { left: 0; right: 0; }
+    .user-pill { max-width: 86%; }
+  }
 </style>
 </head>
 <body>
-<div id="titlebar">多Agent工作台 - PowerShell 风格终端（本地 127.0.0.1）</div>
-<pre id="output"><span class="ok">欢迎使用多Agent代码协作助手。输入 help 查看可用命令。</span></pre>
-<div id="input-line">
-  <span id="prompt">PS project 多Agent代码协作助手&gt;</span>
-  <input id="cmd" autofocus autocomplete="off" spellcheck="false">
+<div class="windowbar">
+  <div class="window-left">
+    <span class="window-icon">▯</span>
+    <span class="window-icon">←</span>
+    <span class="window-icon">→</span>
+    <nav class="window-menu" aria-label="应用菜单">
+      <span>文件</span>
+      <span>编辑</span>
+      <span>视图</span>
+      <span>帮助</span>
+    </nav>
+  </div>
+  <div class="window-controls" aria-hidden="true">
+    <span>−</span>
+    <span>▢</span>
+    <span>×</span>
+  </div>
+</div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">Codex <small>⌄</small></div>
+    <div class="side-actions">
+      <button class="side-button" data-reset><span class="nav-ico">□</span><span>新对话</span></button>
+      <button class="side-button" disabled><span class="nav-ico">⌘</span><span>拉取请求</span></button>
+      <button class="side-button" disabled><span class="nav-ico">▦</span><span>站点</span></button>
+      <button class="side-button" disabled><span class="nav-ico">◷</span><span>已安排</span></button>
+      <button class="side-button" disabled><span class="nav-ico">◎</span><span>插件</span></button>
+    </div>
+
+    <div class="section-label">项目</div>
+    <div class="project-list">
+      <button class="project-row" disabled><span class="nav-ico">□</span><span>c成长</span></button>
+      <button class="project-row active"><span class="nav-ico">□</span><span>agent协作</span></button>
+      <button class="project-row sub" data-fill='run "整理项目功能与推进计划"'>梳理项目功能与推进计划</button>
+      <button class="project-row sub" data-fill='start "生成任务上下文"'>看看这个项目</button>
+      <button class="project-row sub" data-command='demo "演示基础闭环"'>解释版本编号规则</button>
+      <button class="project-row sub muted" disabled>展开显示</button>
+      <button class="project-row" disabled><span class="nav-ico">□</span><span>幼儿园网站</span></button>
+      <button class="project-row" disabled><span class="nav-ico">□</span><span>学习</span></button>
+    </div>
+
+    <div class="section-label">最近</div>
+    <div class="recent-list">
+      <button class="recent-row" disabled>翻译内容</button>
+      <button class="recent-row" disabled>制定工具台工作规则</button>
+      <button class="recent-row" disabled>规范项目文件整理</button>
+      <button class="recent-row" disabled>检查 dsh 是否删干净</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="userbar">本机模式 · 主知识库只读</div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="title"><span>□</span><span>梳理项目功能与推进计划</span><span class="top-ellipsis">···</span></div>
+      <div class="top-actions">
+        <button class="icon-button" id="toggleRightPanel" title="显示或收起环境信息" aria-label="显示或收起环境信息" aria-pressed="true"><span class="icon icon-controls"><span></span></span></button>
+        <button class="icon-button" id="toggleOutput" title="显示或收起运行输出" aria-label="显示或收起运行输出" aria-pressed="true"><span class="icon icon-terminal"></span></button>
+        <button class="icon-button" id="toggleLeftPanel" title="显示或收起左侧导航" aria-label="显示或收起左侧导航" aria-pressed="true"><span class="icon icon-sidebar"></span></button>
+      </div>
+    </header>
+
+    <section class="content" id="content">
+      <div class="thread" id="thread">
+        <div class="event">
+          <div class="user-pill">打开给我看看</div>
+        </div>
+        <div class="event">
+          <div class="event-meta"><span>就绪</span><span class="event-rule"></span></div>
+          <div class="assistant-text">
+            <p>软件页面已打开。未实现的功能位置先留空，只保留当前能运行的输入和命令。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="composer">
+      <div class="composer-box">
+        <input id="goal" autocomplete="off" spellcheck="false" placeholder="输入任务，例如：给候选记录增加搜索">
+        <div class="composer-actions">
+          <button class="small-button" data-fill='pending'>候选</button>
+          <button class="small-button" data-fill='review'>审查</button>
+          <button class="small-button" id="startOnly">只生成上下文</button>
+          <span class="fill"></span>
+          <button class="send-button" id="runTask" title="运行工作流">↑</button>
+        </div>
+      </div>
+      <div class="terminal-dock">
+        <pre class="output" id="output">&gt; provider
+当前 Provider：mock
+模型：mock-model
+接口地址：本地模拟，不联网
+密钥环境变量：未配置
+密钥状态：未配置
+可用 Provider：mock, deepseek, openai, openai-compatible
+切换示例：$env:AGENT_WORKBENCH_PROVIDER='deepseek'</pre>
+      </div>
+    </section>
+  </main>
+
+  <aside class="right-panel">
+    <div class="inspector">
+      <div class="panel-title-row">
+        <h2>环境信息</h2>
+        <button class="panel-plus" aria-label="添加环境信息" title="添加环境信息">+</button>
+      </div>
+      <div class="info-list">
+        <div class="info-row"><span>▣</span><strong>变更</strong></div>
+        <div class="info-row"><span>▭</span><strong>本地</strong></div>
+        <div class="info-row"><span>⌘</span><strong>master</strong></div>
+        <div class="info-row muted-row"><span>—</span><strong>提交或推送</strong></div>
+        <div class="info-row muted-row"><span>◉</span><strong>无法获取拉取请求状态</strong></div>
+      </div>
+      <div class="panel-section">
+        <h3>后台进程</h3>
+        <div class="process" id="lastCommand">$env:PYTHONPATH='src'; python -m code_agent_collab.webui</div>
+      </div>
+      <div class="panel-section">
+        <div class="panel-title-row">
+          <h3>来源</h3>
+          <button class="panel-plus" aria-label="添加来源" title="添加来源">+</button>
+        </div>
+        <div class="source-list">
+          <div class="source-item">src/code_agent_collab/webui.py</div>
+          <div class="source-item">tests/test_webui.py</div>
+          <div class="source-item">变更记录.md</div>
+        </div>
+      </div>
+    </div>
+  </aside>
 </div>
 <script>
   const output = document.getElementById("output");
-  const cmdInput = document.getElementById("cmd");
+  const goalInput = document.getElementById("goal");
+  const runStatus = document.getElementById("runStatus");
+  const lastCommand = document.getElementById("lastCommand");
+  const providerText = document.getElementById("providerText");
 
-  function append(html) {
-    output.insertAdjacentHTML("beforeend", html);
+  function setText(node, text) {
+    if (node) node.textContent = text;
+  }
+
+  function append(text, className = "out") {
+    const span = document.createElement("span");
+    span.className = className;
+    span.textContent = text;
+    output.appendChild(document.createTextNode("\\n"));
+    output.appendChild(span);
     output.scrollTop = output.scrollHeight;
   }
 
+  function quoteArg(text) {
+    return `"${String(text).replace(/\\\\/g, "\\\\\\\\").replace(/"/g, "\\\\\\"")}"`;
+  }
+
   async function run(command) {
-    append(`<span class="promptline">PS project 多Agent代码协作助手&gt; <span class="out">${escapeHtml(command)}</span></span>\\n`);
-    cmdInput.value = "";
+    if (!command.trim()) return;
+    setText(runStatus, "运行中");
+    setText(lastCommand, command);
+    append(`> ${command}`, "cmdline");
     try {
       const resp = await fetch("/api/command", {
         method: "POST",
@@ -99,25 +837,78 @@ PAGE = """<!DOCTYPE html>
       });
       const data = await resp.json();
       if (!resp.ok) {
-        append(`<span class="err">${escapeHtml(data.error || "请求失败")}</span>\\n`);
+        append(data.error || "请求失败", "err");
+        setText(runStatus, "失败");
         return;
       }
-      const cls = data.code === 0 ? "out" : "err";
-      append(`<span class="${cls}">${escapeHtml(data.output)}</span>\\n`);
+      append(data.output || "命令已完成。", data.code === 0 ? "out" : "err");
+      setText(runStatus, data.code === 0 ? "完成" : "失败");
+      if (command === "provider" && data.output) {
+        const match = data.output.match(/当前 Provider：(.+)/);
+        if (match) setText(providerText, match[1].trim());
+      }
     } catch (e) {
-      append(`<span class="err">网络错误：${escapeHtml(String(e))}</span>\\n`);
+      append(`网络错误：${String(e)}`, "err");
+      setText(runStatus, "失败");
     }
   }
 
-  function escapeHtml(text) {
-    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;")
-                       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  function fill(command) {
+    goalInput.value = command;
+    goalInput.focus();
   }
 
-  cmdInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && cmdInput.value.trim()) {
-      run(cmdInput.value.trim());
+  document.querySelectorAll("[data-command]").forEach((button) => {
+    button.addEventListener("click", () => run(button.dataset.command));
+  });
+  document.querySelectorAll("[data-fill]").forEach((button) => {
+    button.addEventListener("click", () => fill(button.dataset.fill));
+  });
+  document.querySelectorAll("[data-reset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      goalInput.value = "";
+      output.textContent = "> provider\\n当前 Provider：mock\\n模型：mock-model\\n接口地址：本地模拟，不联网\\n密钥环境变量：未配置\\n密钥状态：未配置\\n可用 Provider：mock, deepseek, openai, openai-compatible\\n切换示例：$env:AGENT_WORKBENCH_PROVIDER='deepseek'";
+      setText(runStatus, "未运行");
+      setText(lastCommand, "$env:PYTHONPATH='src'; python -m code_agent_collab.webui");
+      goalInput.focus();
+    });
+  });
+  document.getElementById("runTask").addEventListener("click", () => {
+    const goal = goalInput.value.trim();
+    if (!goal) return;
+    if (/^(pending|review|provider|help|confirm|discard|demo|start|run)\\b/.test(goal)) {
+      run(goal);
+    } else {
+      run(`run ${quoteArg(goal)}`);
     }
+  });
+  document.getElementById("toggleLeftPanel").addEventListener("click", (event) => {
+    document.body.classList.toggle("left-collapsed");
+    event.currentTarget.setAttribute(
+      "aria-pressed",
+      String(!document.body.classList.contains("left-collapsed"))
+    );
+  });
+  document.getElementById("toggleOutput").addEventListener("click", (event) => {
+    document.body.classList.toggle("output-collapsed");
+    event.currentTarget.setAttribute(
+      "aria-pressed",
+      String(!document.body.classList.contains("output-collapsed"))
+    );
+  });
+  document.getElementById("toggleRightPanel").addEventListener("click", (event) => {
+    document.body.classList.toggle("right-collapsed");
+    event.currentTarget.setAttribute(
+      "aria-pressed",
+      String(!document.body.classList.contains("right-collapsed"))
+    );
+  });
+  document.getElementById("startOnly").addEventListener("click", () => {
+    const goal = goalInput.value.trim();
+    if (goal) run(`start ${quoteArg(goal)}`);
+  });
+  goalInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") document.getElementById("runTask").click();
   });
 </script>
 </body>
@@ -131,11 +922,26 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
     if process.poll() is not None:
         return
     if os.name == "nt":
+        try:
+            process.terminate()
+            process.wait(timeout=3)
+            return
+        except (OSError, subprocess.TimeoutExpired):
+            pass
         subprocess.run(
             ["taskkill", "/PID", str(process.pid), "/T", "/F"],
             capture_output=True,
             check=False,
         )
+        try:
+            process.wait(timeout=3)
+            return
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        try:
+            process.kill()
+        except OSError:
+            pass
     else:
         process.terminate()
         try:

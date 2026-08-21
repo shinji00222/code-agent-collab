@@ -13,3 +13,4 @@ dev-vault/pending/*.md
 dev-vault/projects/*.md
 logs/context-packs/
 logs/workflows/
+logs/plans/
