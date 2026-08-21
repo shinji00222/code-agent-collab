@@ -43,7 +43,8 @@ class ReviewerAgent(BaseAgent):
         for draft_path in draft_paths:
             name = draft_path.name
             content = draft_path.read_text(encoding="utf-8")
-            stripped_len = len(content.strip())
+            draft_body = _extract_ai_draft_body(content)
+            stripped_len = len(draft_body.strip())
             if stripped_len < MIN_DRAFT_CHARS:
                 reasons.append(
                     f"草稿 {name} 内容过短（{stripped_len} 字符 < {MIN_DRAFT_CHARS}），疑似空草稿"
@@ -52,7 +53,7 @@ class ReviewerAgent(BaseAgent):
             if sensitive:
                 reasons.append(f"草稿 {name} 检测到敏感信息：" + "、".join(sensitive))
             vault = Path(load_config(context.project_root).main_vault_path)
-            if str(vault) in content or vault.as_posix() in content:
+            if _mentions_main_vault_outside_project(content, vault, context.project_root):
                 reasons.append(f"草稿 {name} 内容引用了主知识库路径，疑似越权")
 
         verdict = "通过" if not reasons else "需修改"
@@ -79,4 +80,52 @@ class ReviewerAgent(BaseAgent):
         if not projects_dir.exists():
             return []
         matches = sorted(projects_dir.glob(f"{context.task_id}-coder-draft*.md"))
-        return matches
+        latest_by_worker: dict[str, tuple[int, Path]] = {}
+        prefix = f"{context.task_id}-coder-draft"
+        for path in matches:
+            worker_key, revision = _draft_worker_key(path, prefix)
+            current = latest_by_worker.get(worker_key)
+            if current is None or revision > current[0]:
+                latest_by_worker[worker_key] = (revision, path)
+        return [item[1] for item in sorted(latest_by_worker.values(), key=lambda item: item[1].name)]
+
+
+def _draft_worker_key(path: Path, prefix: str) -> tuple[str, int]:
+    stem = path.stem
+    tail = stem.removeprefix(prefix)
+    marker = "-revision"
+    if marker not in tail:
+        return tail, 0
+    key, raw_revision = tail.rsplit(marker, 1)
+    try:
+        return key, int(raw_revision)
+    except ValueError:
+        return tail, 0
+
+
+def _mentions_main_vault_outside_project(content: str, vault: Path, project_root: Path) -> bool:
+    vault_forms = _path_forms(vault)
+    project_forms = _path_forms(project_root)
+    for line in content.splitlines():
+        normalized = line.lower()
+        if any(vault_form in normalized for vault_form in vault_forms) and not any(
+            project_form in normalized for project_form in project_forms
+        ):
+            return True
+    return False
+
+
+def _path_forms(path: Path) -> tuple[str, str]:
+    raw = str(path).lower()
+    return raw, path.as_posix().lower()
+
+
+def _extract_ai_draft_body(content: str) -> str:
+    marker = "## AI 草稿"
+    if marker not in content:
+        return content
+    body = content.split(marker, 1)[1]
+    next_section = "\n## "
+    if next_section in body:
+        body = body.split(next_section, 1)[0]
+    return body

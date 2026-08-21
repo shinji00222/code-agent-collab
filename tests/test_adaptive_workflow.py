@@ -3,12 +3,32 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from code_agent_collab.orchestration import (
     create_adaptive_plan,
     execute_adaptive_plan,
     run_adaptive_workflow,
 )
+from code_agent_collab.providers import AIProvider
+
+
+class ShortThenGoodProvider(AIProvider):
+    name = "test"
+
+    def __init__(self) -> None:
+        self.coder_calls = 0
+
+    def complete(self, system_prompt: str, user_prompt: str) -> str:
+        del system_prompt
+        if "几个 worker" in user_prompt:
+            return "COMPLEX"
+        if "代码实现草稿" not in user_prompt:
+            return "模拟 AI 已收到任务：" + user_prompt
+        self.coder_calls += 1
+        if self.coder_calls <= 2:
+            return "太短"
+        return "重写后的有效代码草稿。" * 20
 
 
 def _make_project(tmp: str) -> Path:
@@ -94,6 +114,26 @@ class AdaptiveWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(len(drafts), 2)
             self.assertIn("评审", result.agent_results[-1].summary)
+
+    def test_complex_task_rewrites_parallel_coders_once_when_review_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            provider = ShortThenGoodProvider()
+
+            with patch("code_agent_collab.orchestration.create_provider", return_value=provider):
+                result = run_adaptive_workflow(
+                    root, "用 python 和前端写一个带多个模块和接口的完整网站，拆成前后端"
+                )
+
+            roles = [item.role for item in result.agent_results]
+            self.assertEqual(roles.count("CoderAgent"), 4)
+            self.assertEqual(roles.count("ReviewerAgent"), 2)
+            self.assertEqual(result.agent_results[-1].role, "ReviewerAgent")
+            self.assertIn("通过", result.agent_results[-1].summary)
+            revision_drafts = sorted(
+                (root / "dev-vault" / "projects").glob(f"{result.task_id}-coder-draft-*-revision1.md")
+            )
+            self.assertEqual(len(revision_drafts), 2)
 
 
 if __name__ == "__main__":

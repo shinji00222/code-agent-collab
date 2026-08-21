@@ -16,6 +16,8 @@ from .file_utils import ensure_dir, write_text
 from .providers import AIProvider, create_provider
 from .reflection import ReflectionResult, create_reflection
 
+MAX_REVIEW_RETRIES = 1
+
 
 @dataclass(frozen=True)
 class AdaptivePlanResult:
@@ -47,6 +49,54 @@ def build_worker(spec: WorkerSpec, provider: AIProvider):
     if spec.role == "ReviewerAgent":
         return ReviewerAgent(provider=provider)
     raise ValueError(f"未知 worker 角色：{spec.role}")
+
+
+def _reviewer_needs_revision(worker) -> bool:
+    return getattr(worker, "last_verdict", "") == "需修改"
+
+
+def _reviewer_feedback(worker, result: AgentResult) -> list[str]:
+    reasons = getattr(worker, "last_reasons", [])
+    return list(reasons) if reasons else list(result.outputs)
+
+
+def _run_workers(workers: list, context: AgentContext, results: list[AgentResult]) -> list[AgentResult]:
+    if len(workers) > 1:
+        with ThreadPoolExecutor(max_workers=len(workers)) as pool:
+            return list(pool.map(lambda worker: worker.run(context, results), workers))
+    return [workers[0].run(context, results)]
+
+
+def _rerun_coders(
+    coder_specs: tuple[WorkerSpec, ...],
+    provider: AIProvider,
+    context: AgentContext,
+    results: list[AgentResult],
+    feedback: list[str],
+    revision: int,
+) -> list[AgentResult]:
+    coders = [build_worker(spec, provider) for spec in coder_specs]
+    if len(coders) > 1:
+        with ThreadPoolExecutor(max_workers=len(coders)) as pool:
+            return list(
+                pool.map(
+                    lambda worker: worker.run_with_feedback(
+                        context,
+                        results,
+                        reviewer_feedback=feedback,
+                        revision=revision,
+                    ),
+                    coders,
+                )
+            )
+    return [
+        coders[0].run_with_feedback(
+            context,
+            results,
+            reviewer_feedback=feedback,
+            revision=revision,
+        )
+    ]
 
 
 def _plan_to_json(plan: OrchestrationPlan, task_id: str, goal: str, summary: str) -> dict:
@@ -205,15 +255,46 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
     )
 
     results: list[AgentResult] = [orchestrator_result]
+    latest_coder_specs: tuple[WorkerSpec, ...] = ()
     for stage in plan.stages:
         workers = [build_worker(spec, provider) for spec in stage]
-        if len(workers) > 1:
-            # 阶段内并行：互不依赖的 worker 同时执行
-            with ThreadPoolExecutor(max_workers=len(workers)) as pool:
-                stage_results = list(pool.map(lambda worker: worker.run(context, results), workers))
-        else:
-            stage_results = [workers[0].run(context, results)]
+        stage_results = _run_workers(workers, context, results)
         results.extend(stage_results)
+        coder_specs = tuple(spec for spec in stage if spec.role == "CoderAgent")
+        if coder_specs:
+            latest_coder_specs = coder_specs
+
+        reviewer_pairs = [
+            (worker, result)
+            for worker, result in zip(workers, stage_results, strict=True)
+            if getattr(worker, "role", "") == "ReviewerAgent"
+        ]
+        if not reviewer_pairs:
+            continue
+
+        reviewer, reviewer_result = reviewer_pairs[0]
+        retry_count = 0
+        while (
+            latest_coder_specs
+            and _reviewer_needs_revision(reviewer)
+            and retry_count < MAX_REVIEW_RETRIES
+        ):
+            retry_count += 1
+            rewrite_results = _rerun_coders(
+                latest_coder_specs,
+                provider,
+                context,
+                results,
+                _reviewer_feedback(reviewer, reviewer_result),
+                retry_count,
+            )
+            results.extend(rewrite_results)
+            reviewer = build_worker(WorkerSpec("ReviewerAgent"), provider)
+            reviewer_result = reviewer.run(context, results)
+            results.append(reviewer_result)
+
+        if _reviewer_needs_revision(reviewer):
+            break
 
     workflow_log_path = _write_adaptive_log(project_root, task_id, goal, plan, results)
     reflection = create_reflection(project_root, task_id)

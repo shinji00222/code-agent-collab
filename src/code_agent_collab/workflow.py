@@ -10,6 +10,8 @@ from .file_utils import ensure_dir, write_text
 from .reflection import ReflectionResult, create_reflection
 from .providers import AIProvider, create_provider
 
+MAX_REVIEW_RETRIES = 1
+
 
 def build_workflow_agents(provider: AIProvider) -> list:
     """构建默认流水线 Agent 列表（供 run_workflow 使用）。
@@ -27,6 +29,22 @@ def build_workflow_agents(provider: AIProvider) -> list:
         "ReflectorAgent",
     ]
     return [create_agent(role, provider=provider) for role in roles]
+
+
+def _reviewer_needs_revision(agent) -> bool:
+    return getattr(agent, "last_verdict", "") == "需修改"
+
+
+def _reviewer_feedback(agent, result: AgentResult) -> list[str]:
+    reasons = getattr(agent, "last_reasons", [])
+    return list(reasons) if reasons else list(result.outputs)
+
+
+def _latest_coder(agents: list, reviewer_index: int):
+    for agent in reversed(agents[:reviewer_index]):
+        if hasattr(agent, "run_with_feedback"):
+            return agent
+    return None
 
 
 @dataclass(frozen=True)
@@ -85,8 +103,28 @@ def run_workflow(project_root: Path, goal: str) -> WorkflowResult:
     agents = build_workflow_agents(provider)
 
     results: list[AgentResult] = []
-    for agent in agents:
-        results.append(agent.run(context, results))
+    for index, agent in enumerate(agents):
+        result = agent.run(context, results)
+        results.append(result)
+        if getattr(agent, "role", "") != "ReviewerAgent" or not _reviewer_needs_revision(agent):
+            continue
+
+        coder = _latest_coder(agents, index)
+        retry_count = 0
+        while coder is not None and _reviewer_needs_revision(agent) and retry_count < MAX_REVIEW_RETRIES:
+            retry_count += 1
+            rewrite = coder.run_with_feedback(
+                context,
+                results,
+                reviewer_feedback=_reviewer_feedback(agent, result),
+                revision=retry_count,
+            )
+            results.append(rewrite)
+            result = agent.run(context, results)
+            results.append(result)
+
+        if _reviewer_needs_revision(agent):
+            break
 
     workflow_log_path = _write_workflow_log(project_root, context_pack.task_id, goal, results)
     reflection = create_reflection(project_root, context_pack.task_id)

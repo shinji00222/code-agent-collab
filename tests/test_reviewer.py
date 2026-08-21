@@ -58,6 +58,19 @@ class ReviewerAgentTests(unittest.TestCase):
             self.assertEqual(agent.last_verdict, "通过")
             self.assertEqual(result.summary, "草稿评审结论：通过（评审 1 份草稿，0 个问题）")
 
+    def test_reviewer_checks_latest_revision_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_draft(root, "# 太短的第一版")
+            revision = root / "dev-vault" / "projects" / f"{TASK_ID}-coder-draft-revision1.md"
+            write_text(revision, _normal_content())
+
+            agent = ReviewerAgent()
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "通过")
+            self.assertIn(revision.name, result.evidence[0])
+
     def test_sensitive_draft_marks_needs_fix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
