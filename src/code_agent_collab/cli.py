@@ -9,6 +9,7 @@ from .config import save_default_config
 from .context_pack import create_context_pack
 from .demo import run_demo
 from .orchestration import create_adaptive_plan, execute_adaptive_plan
+from .apply import apply_draft_workflow, find_draft_path
 from .reflection import create_reflection, list_pending_notes
 from .providers import SUPPORTED_PROVIDERS, ProviderConfig, create_provider
 from .review import (
@@ -135,6 +136,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Project root. Defaults to current directory.",
     )
 
+    apply_parser = subparsers.add_parser(
+        "apply-draft", help="Preview or apply a coder draft (dry-run by default)."
+    )
+    apply_parser.add_argument("task", help="Task id or keyword.")
+    apply_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply changes, run tests, and commit locally (no push).",
+    )
+    apply_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root. Defaults to current directory.",
+    )
+
     subparsers.add_parser("provider", help="Show the active AI provider configuration.")
     return parser
 
@@ -249,6 +265,19 @@ def main(argv: list[str] | None = None) -> int:
         print(f"候选复利记录：{result.reflection.output_path}")
         print("Agent 顺序：" + " -> ".join(item.role for item in result.agent_results))
         return 0
+
+    if args.command == "apply-draft":
+        try:
+            draft_path = find_draft_path(project_root, args.task)
+        except FileNotFoundError as exc:
+            print(f"无法找到草稿：{exc}")
+            return 2
+        result = apply_draft_workflow(project_root, draft_path, apply=args.apply)
+        for path, diff in result.diffs:
+            print(f"===== {path} =====")
+            print(diff or "（新文件或无差异）")
+        print(f"[{result.stage}] {'成功' if result.ok else '失败'}：{result.message}")
+        return 0 if result.ok else 1
 
     if args.command == "provider":
         config = ProviderConfig.from_env()

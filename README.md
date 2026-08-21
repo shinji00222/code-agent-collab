@@ -58,6 +58,7 @@ python -m code_agent_collab.cli demo "任务目标"
 python -m code_agent_collab.cli run "任务目标"
 python -m code_agent_collab.cli run-adaptive "任务目标"
 python -m code_agent_collab.cli approve "任务ID或关键词"
+python -m code_agent_collab.cli apply-draft "任务ID或关键词" [--apply]
 python -m code_agent_collab.cli provider
 python -m code_agent_collab.webui
 ```
@@ -74,6 +75,7 @@ python -m code_agent_collab.webui
 - `run`：执行规则版多 Agent 工作流。
 - `run-adaptive`：生成半动态自适应方案并等待人工审批（不自动执行）；主控按任务复杂度从三档预设模板选择 worker 方案（SIMPLE=1 / MEDIUM=2 / COMPLEX=4），阶段内并行。
 - `approve`：人工批准 `run-adaptive` 生成的方案，批准后执行 workers（阶段间串行、阶段内并行），产出工作流日志与候选复盘。
+- `apply-draft`：解析 Coder 草稿并预览 diff（dry-run，不写文件）；加 `--apply` 应用改动 → 自动跑测试 → 测试通过自动本地 commit（失败自动回滚）。只允许改 `src/`、`tests/` 下文本文件。
 - `provider`：查看当前 AI Provider 配置和可用 Provider 列表；默认显示本地模拟 Provider。
 - `webui`：启动 PowerShell 风格的本机网页终端（默认 http://127.0.0.1:8080），在浏览器里输入命令。
 
@@ -111,7 +113,7 @@ $env:AGENT_WORKBENCH_API_KEY_ENV="你的密钥环境变量名"
 - `CoordinatorAgent`：拆分任务（默认流水线）。
 - `KnowledgeAgent`：从主知识库只读检索相关文档，生成知识补充文件。
 - `PlannerAgent`：生成保守执行计划。
-- `CoderAgent`：生成代码草稿，只写入 `dev-vault/projects`，不直接修改正式源码；支持 `worker_label` 以多实例并行写独立草稿。
+- `CoderAgent`：生成代码草稿，只写入 `dev-vault/projects`，不直接修改正式源码；支持 `worker_label` 以多实例并行写独立草稿；草稿按固定五小节格式输出（修改文件清单/修改原因/建议代码/测试方法/风险），可被 `apply-draft` 解析。
 - `ReviewerAgent`：规则版评审代码草稿（存在性 / AI 草稿正文长度 / 敏感信息 / 越权），支持评审多份草稿；不通过时可触发最多一次重写。
 - `OrchestratorAgent`：半动态主控，按任务复杂度从三档预设模板选择执行方案（`run-adaptive`）。
 - `ValidatorAgent`：检查上下文包和边界。
