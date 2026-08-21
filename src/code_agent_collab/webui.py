@@ -7,11 +7,22 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-SRC_DIR = PROJECT_ROOT / "src"
+# 打包（PyInstaller）模式下没有 __file__，项目根目录取 exe 所在目录；
+# 开发模式下是仓库根目录（src/code_agent_collab/webui.py 向上三级）。
+if getattr(sys, "frozen", False):
+    PROJECT_ROOT = Path(sys.executable).resolve().parent
+    SRC_DIR = PROJECT_ROOT
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+    SRC_DIR = PROJECT_ROOT / "src"
+
+# 打包模式下 run_cli 调用的同目录 CLI 可执行程序名
+CLI_EXE_NAME = "AgentWorkbench-CLI.exe"
 
 ALLOWED_COMMANDS = {
     "init",
@@ -23,6 +34,8 @@ ALLOWED_COMMANDS = {
     "discard",
     "demo",
     "run",
+    "run-adaptive",
+    "approve",
     "provider",
     "help",
 }
@@ -34,16 +47,18 @@ HELP_TEXT = """可用命令（在下面输入框输入后回车）：
   init                    生成/重置本地配置
   start "任务目标"         生成任务上下文包
   run "任务目标"           跑完整多 Agent 工作流
+  run-adaptive "任务目标"   生成半动态自适应方案（等待人工审批）
+  approve "任务ID或关键词"  批准方案并执行 workers
   demo "任务目标"          一键演示闭环
   pending                 列出待确认候选记录
-  review                  审查候选记录并入库或标记人工处理
+  review                  审查候选记录（通过后需 confirm 才入库）
   confirm "候选关键词"     人工确认候选入库
   discard "候选关键词"     废弃候选记录
 
 示例：
-  run "DeepSeek API 配置经验"
+  run-adaptive "写一个待办清单脚本"
+  approve 20260821-141421
   pending
-  review
 """
 
 PAGE = """<!DOCTYPE html>
@@ -971,9 +986,15 @@ def run_cli(args: list[str], timeout: int = 180) -> tuple[int, str]:
     if args[0] == "help":
         return 0, HELP_TEXT
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(SRC_DIR)
+    if getattr(sys, "frozen", False):
+        # 打包模式：调用同目录的 CLI 可执行程序（PyInstaller 单文件模式无法 -m 启动）
+        cli_exe = Path(sys.executable).resolve().parent / CLI_EXE_NAME
+        command = [str(cli_exe), *args]
+    else:
+        env["PYTHONPATH"] = str(SRC_DIR)
+        command = [sys.executable, "-m", "code_agent_collab.cli", *args]
     process = subprocess.Popen(
-        [sys.executable, "-m", "code_agent_collab.cli", *args],
+        command,
         cwd=PROJECT_ROOT,
         env=env,
         stdout=subprocess.PIPE,
@@ -1044,9 +1065,14 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     parser = argparse.ArgumentParser(description="多Agent工作台 Web 终端")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--no-browser", action="store_true", help="启动后不自动打开浏览器")
     args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(f"Web UI: http://127.0.0.1:{args.port}  (Ctrl+C to stop)")
+    url = f"http://127.0.0.1:{args.port}"
+    print(f"Web UI: {url}  (Ctrl+C to stop)")
+    if not args.no_browser:
+        # 等服务器就绪后再打开浏览器（打包成软件后双击即用）
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

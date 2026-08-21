@@ -180,6 +180,25 @@ $env:AGENT_WORKBENCH_MAIN_VAULT="C:\path\to\your-obsidian-vault"
 .agent-workbench/config.example.json
 ```
 
+## 打包为软件（Windows）
+
+把 Web 终端打包成双击即用的 Windows 程序：
+
+```powershell
+pwsh -File scripts/build-exe.ps1
+```
+
+产物在 `dist/`（两个 exe 必须放在同一目录，不要单独删除 CLI）：
+
+- `多Agent工作台.exe`：界面程序，双击启动，自动打开浏览器 `http://127.0.0.1:8080`
+- `AgentWorkbench-CLI.exe`：后台 CLI 程序，由界面程序调用执行命令
+
+注意事项：
+
+- exe 未签名，Windows 首次运行可能提示 SmartScreen，选择"仍要运行"即可；
+- onefile 首次启动需要数秒解压到临时目录，属正常现象；
+- 程序在 exe 所在目录读写 `dev-vault`、`logs` 等运行产物。
+
 ## 版本规划
 
 详见：
