@@ -36,6 +36,7 @@ ALLOWED_COMMANDS = {
     "run",
     "run-adaptive",
     "approve",
+    "plans",
     "provider",
     "help",
 }
@@ -48,6 +49,7 @@ HELP_TEXT = """可用命令（在下面输入框输入后回车）：
   start "任务目标"         生成任务上下文包
   run "任务目标"           跑完整多 Agent 工作流
   run-adaptive "任务目标"   生成半动态自适应方案（等待人工审批）
+  plans                   列出已保存的主控方案
   approve "任务ID或关键词"  批准方案并执行 workers
   demo "任务目标"          一键演示闭环
   pending                 列出待确认候选记录
@@ -57,6 +59,7 @@ HELP_TEXT = """可用命令（在下面输入框输入后回车）：
 
 示例：
   run-adaptive "写一个待办清单脚本"
+  plans
   approve 20260821-141421
   pending
 """
@@ -765,6 +768,7 @@ PAGE = """<!DOCTYPE html>
         <input id="goal" autocomplete="off" spellcheck="false" placeholder="输入任务，例如：给候选记录增加搜索">
         <div class="composer-actions">
           <button class="small-button" data-fill='pending'>候选</button>
+          <button class="small-button" data-fill='plans'>方案</button>
           <button class="small-button" data-fill='review'>审查</button>
           <button class="small-button" id="startOnly">只生成上下文</button>
           <span class="fill"></span>
@@ -891,7 +895,7 @@ PAGE = """<!DOCTYPE html>
   document.getElementById("runTask").addEventListener("click", () => {
     const goal = goalInput.value.trim();
     if (!goal) return;
-    if (/^(pending|review|provider|help|confirm|discard|demo|start|run)\\b/.test(goal)) {
+    if (/^(pending|plans|review|provider|help|confirm|discard|demo|start|run)\\b/.test(goal)) {
       run(goal);
     } else {
       run(`run ${quoteArg(goal)}`);

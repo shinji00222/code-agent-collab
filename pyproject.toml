@@ -1,6 +1,6 @@
 [project]
 name = "code-agent-collab"
-version = "0.9.1"
+version = "0.10.0"
 description = "Local-first multi-agent coding workbench prototype."
 requires-python = ">=3.11"
 dependencies = []

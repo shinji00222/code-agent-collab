@@ -8,7 +8,7 @@ from pathlib import Path
 from .config import save_default_config
 from .context_pack import create_context_pack
 from .demo import run_demo
-from .orchestration import create_adaptive_plan, execute_adaptive_plan
+from .orchestration import create_adaptive_plan, execute_adaptive_plan, list_adaptive_plans
 from .apply import apply_draft_workflow, find_draft_path
 from .reflection import create_reflection, list_pending_notes
 from .providers import SUPPORTED_PROVIDERS, ProviderConfig, create_provider
@@ -131,6 +131,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     approve_parser.add_argument("task", help="Task id or keyword.")
     approve_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root. Defaults to current directory.",
+    )
+
+    plans_parser = subparsers.add_parser("plans", help="List saved adaptive plans.")
+    plans_parser.add_argument(
         "--project-root",
         default=".",
         help="Project root. Defaults to current directory.",
@@ -264,6 +271,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"工作流日志：{result.workflow_log_path}")
         print(f"候选复利记录：{result.reflection.output_path}")
         print("Agent 顺序：" + " -> ".join(item.role for item in result.agent_results))
+        return 0
+
+    if args.command == "plans":
+        plans = list_adaptive_plans(project_root)
+        if not plans:
+            print("暂无已保存的主控方案。")
+            return 0
+        print(f"已保存主控方案：{len(plans)} 个")
+        for index, plan in enumerate(plans, start=1):
+            print(f"{index}. {plan.task_id}")
+            print(f"   状态：{plan.status}")
+            print(f"   任务：{plan.goal}")
+            print(
+                f"   复杂度={plan.complexity}，模板={plan.label}，worker 数量={plan.worker_count}"
+            )
+            print(f"   更新时间：{plan.updated_at:%Y-%m-%d %H:%M:%S}")
+            print(f"   计划文件：{plan.plan_path}")
         return 0
 
     if args.command == "apply-draft":

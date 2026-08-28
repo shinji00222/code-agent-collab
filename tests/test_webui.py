@@ -18,6 +18,7 @@ class CommandBuildTests(unittest.TestCase):
     def test_build_allows_known_commands(self) -> None:
         self.assertEqual(build_command('run "测试任务"'), ["run", "测试任务"])
         self.assertEqual(build_command("pending"), ["pending"])
+        self.assertEqual(build_command("plans"), ["plans"])
 
     def test_build_rejects_unknown_commands(self) -> None:
         with self.assertRaises(ValueError):
@@ -34,6 +35,7 @@ class RunCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("run", output)
         self.assertIn("review", output)
+        self.assertIn("plans", output)
 
     def test_provider_outputs_config(self) -> None:
         code, output = run_cli(["provider"])
@@ -63,6 +65,7 @@ class PageTests(unittest.TestCase):
         self.assertNotIn("打开位置", PAGE)
         self.assertIn("环境信息", PAGE)
         self.assertIn("只生成上下文", PAGE)
+        self.assertIn("方案", PAGE)
         self.assertIn("新对话", PAGE)
         self.assertIn("toggleLeftPanel", PAGE)
         self.assertIn("toggleOutput", PAGE)

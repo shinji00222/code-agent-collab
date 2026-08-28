@@ -8,6 +8,7 @@ from unittest.mock import patch
 from code_agent_collab.orchestration import (
     create_adaptive_plan,
     execute_adaptive_plan,
+    list_adaptive_plans,
     run_adaptive_workflow,
 )
 from code_agent_collab.providers import AIProvider
@@ -64,6 +65,23 @@ class ApprovalGateTests(unittest.TestCase):
             self.assertTrue(list((root / "dev-vault" / "projects").glob("*-coder-draft.md")))
             self.assertTrue(result.workflow_log_path.exists())
             self.assertTrue(result.reflection.output_path.exists())
+
+    def test_list_adaptive_plans_shows_approval_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            plan_result = create_adaptive_plan(root, "写个计算器")
+
+            plans = list_adaptive_plans(root)
+
+            self.assertEqual(len(plans), 1)
+            self.assertEqual(plans[0].task_id, plan_result.task_id)
+            self.assertEqual(plans[0].goal, "写个计算器")
+            self.assertEqual(plans[0].status, "待批准")
+
+            execute_adaptive_plan(root, plan_result.task_id)
+            plans = list_adaptive_plans(root)
+
+            self.assertEqual(plans[0].status, "已执行")
 
 
 class AdaptiveWorkflowTests(unittest.TestCase):

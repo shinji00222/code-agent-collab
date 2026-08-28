@@ -40,6 +40,20 @@ class AdaptiveWorkflowResult:
     workflow_log_path: Path
 
 
+@dataclass(frozen=True)
+class AdaptivePlanSummary:
+    """已保存的自适应方案摘要，用于人工审批前查看。"""
+
+    task_id: str
+    goal: str
+    complexity: str
+    label: str
+    worker_count: int
+    status: str
+    plan_path: Path
+    updated_at: datetime
+
+
 def build_worker(spec: WorkerSpec, provider: AIProvider):
     """按 WorkerSpec 构建 worker 实例。"""
     if spec.role == "KnowledgeAgent":
@@ -143,6 +157,32 @@ def find_plan_path(project_root: Path, task: str) -> Path:
     if not matches:
         raise FileNotFoundError(f"未找到匹配任务的计划文件：{task}")
     return matches[0]
+
+
+def list_adaptive_plans(project_root: Path) -> list[AdaptivePlanSummary]:
+    """列出已保存的主控方案，最近修改的排在前面。"""
+    plans_dir = _plan_dir(project_root)
+    if not plans_dir.exists():
+        return []
+
+    summaries: list[AdaptivePlanSummary] = []
+    for path in sorted(plans_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        task_id = data["task_id"]
+        workflow_log = project_root / "logs" / "workflows" / f"{task_id}-adaptive.md"
+        summaries.append(
+            AdaptivePlanSummary(
+                task_id=task_id,
+                goal=data.get("goal", ""),
+                complexity=data.get("complexity", ""),
+                label=data.get("label", ""),
+                worker_count=int(data.get("worker_count", 0)),
+                status="已执行" if workflow_log.exists() else "待批准",
+                plan_path=path,
+                updated_at=datetime.fromtimestamp(path.stat().st_mtime),
+            )
+        )
+    return summaries
 
 
 def _render_plan(plan: OrchestrationPlan) -> str:
