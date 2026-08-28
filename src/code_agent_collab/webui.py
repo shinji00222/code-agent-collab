@@ -138,24 +138,24 @@ PAGE = """<!DOCTYPE html>
   .app {
     height: calc(100vh - 54px);
     display: grid;
-    grid-template-columns: 364px minmax(0, 1fr) 452px;
-    background: var(--bg);
+    grid-template-columns: minmax(0, 1fr);
+    background: #101010;
   }
   body.right-collapsed .app {
-    grid-template-columns: 364px minmax(0, 1fr) 0;
+    grid-template-columns: minmax(0, 1fr);
   }
   body.left-collapsed .app {
-    grid-template-columns: 0 minmax(0, 1fr) 452px;
+    grid-template-columns: minmax(0, 1fr);
   }
   body.left-collapsed.right-collapsed .app {
-    grid-template-columns: 0 minmax(0, 1fr) 0;
+    grid-template-columns: minmax(0, 1fr);
   }
   .sidebar {
     min-width: 0;
     border-right: 1px solid var(--line);
     background: #1f1f1f;
     padding: 18px 11px 14px;
-    display: flex;
+    display: none;
     flex-direction: column;
   }
   .brand {
@@ -262,13 +262,13 @@ PAGE = """<!DOCTYPE html>
     flex-direction: column;
   }
   .topbar {
-    height: 68px;
+    height: 52px;
     border-bottom: 1px solid var(--line);
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 22px;
-    background: #191919;
+    background: #111;
   }
   .title {
     display: flex;
@@ -385,17 +385,17 @@ PAGE = """<!DOCTYPE html>
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 30px 0 260px;
+    padding: 16px 0 260px;
   }
   .thread {
-    width: min(1104px, calc(100% - 72px));
+    width: min(980px, calc(100% - 36px));
     margin: 0 auto;
   }
   .event {
     display: grid;
     grid-template-columns: 1fr;
     gap: 14px;
-    margin: 24px 0;
+    margin: 14px 0;
   }
   .event-meta {
     display: flex;
@@ -412,7 +412,12 @@ PAGE = """<!DOCTYPE html>
   .assistant-text {
     color: #e2e2e2;
     font-size: 15px;
-    line-height: 1.75;
+    line-height: 1.7;
+    border: 1px solid #2f2f2f;
+    border-radius: 8px;
+    background: #151515;
+    padding: 14px;
+    font-family: Consolas, "Courier New", "Microsoft YaHei UI", monospace;
   }
   .assistant-text p { margin: 0 0 12px; }
   .user-pill {
@@ -485,11 +490,11 @@ PAGE = """<!DOCTYPE html>
   .output .cmdline { color: #f0f0f0; }
   .composer {
     position: fixed;
-    left: 364px;
-    right: 452px;
+    left: 0;
+    right: 0;
     bottom: 0;
     padding: 10px 0 0;
-    background: linear-gradient(rgba(23, 23, 23, 0), #171717 28%, #171717);
+    background: linear-gradient(rgba(16, 16, 16, 0), #101010 28%, #101010);
   }
   body.right-collapsed .composer {
     right: 0;
@@ -498,7 +503,7 @@ PAGE = """<!DOCTYPE html>
     left: 0;
   }
   .composer-box {
-    width: min(1104px, 64%, calc(100% - 72px));
+    width: min(980px, calc(100% - 36px));
     margin: 0 auto;
     border: 1px solid var(--line);
     border-radius: 26px 26px 0 0;
@@ -567,6 +572,7 @@ PAGE = """<!DOCTYPE html>
     border-left: 1px solid var(--line);
     background: #1b1b1b;
     padding: 18px 18px;
+    display: none;
   }
   body.right-collapsed .right-panel {
     display: none;
@@ -650,32 +656,110 @@ PAGE = """<!DOCTYPE html>
     text-overflow: ellipsis;
     font-size: 13px;
   }
-  .progress-terminal {
-    margin: 0;
-    min-height: 132px;
-    max-height: 220px;
-    overflow: auto;
+  .agent-tree-card {
     border: 1px solid #333;
     border-radius: 8px;
     background: #101010;
-    color: #d9d9d9;
     padding: 12px;
-    white-space: pre-wrap;
-    word-break: break-word;
     font-family: Consolas, "Courier New", monospace;
+  }
+  .progress-summary {
+    display: grid;
+    gap: 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #303030;
+    color: #d8d8d8;
     font-size: 12px;
-    line-height: 1.55;
+    line-height: 1.45;
+  }
+  .progress-summary strong {
+    color: #f0f0f0;
+    font-weight: 650;
+  }
+  .agent-tree {
+    margin-top: 12px;
+    display: grid;
+  }
+  .agent-node {
+    position: relative;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+    min-height: 30px;
+    padding-bottom: 8px;
+  }
+  .agent-node::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 18px;
+    bottom: -2px;
+    width: 1px;
+    background: #444;
+  }
+  .agent-node:last-child::before {
+    display: none;
+  }
+  .agent-dot {
+    position: relative;
+    z-index: 1;
+    width: 17px;
+    height: 17px;
+    margin-top: 2px;
+    border-radius: 50%;
+    border: 2px solid #777;
+    background: #101010;
+  }
+  .agent-node.done .agent-dot { border-color: var(--ok); background: var(--ok); }
+  .agent-node.waiting .agent-dot { border-color: #d7c78f; background: #554b23; }
+  .agent-node.running .agent-dot { border-color: #b9d7ff; background: #23435d; }
+  .agent-node.idle .agent-dot { border-color: #696969; }
+  .agent-body {
+    min-width: 0;
+  }
+  .agent-label {
+    color: #ededed;
+    font-size: 13px;
+    font-weight: 650;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .agent-meta {
+    margin-top: 3px;
+    color: #a7a7a7;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+  .agent-branches {
+    margin: 2px 0 6px 26px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .branch-node {
+    border: 1px solid #3c3c3c;
+    border-radius: 8px;
+    background: #171717;
+    padding: 6px 8px;
+  }
+  .branch-node.done { border-color: rgba(143, 215, 199, 0.65); }
+  .branch-node .agent-label { font-size: 12px; }
+  .tree-empty {
+    color: #9c9c9c;
+    font-size: 12px;
+    line-height: 1.5;
   }
   @media (max-width: 1600px) {
-    .app { grid-template-columns: 290px minmax(0, 1fr) 330px; }
-    body.right-collapsed .app { grid-template-columns: 290px minmax(0, 1fr) 0; }
-    body.left-collapsed .app { grid-template-columns: 0 minmax(0, 1fr) 330px; }
-    body.left-collapsed.right-collapsed .app { grid-template-columns: 0 minmax(0, 1fr) 0; }
-    .composer { left: 290px; right: 330px; }
-    body.right-collapsed .composer { right: 0; }
-    body.left-collapsed .composer { left: 0; }
+    .app { grid-template-columns: minmax(0, 1fr); }
+    body.right-collapsed .app,
+    body.left-collapsed .app,
+    body.left-collapsed.right-collapsed .app { grid-template-columns: minmax(0, 1fr); }
+    .composer { left: 0; right: 0; }
+    body.right-collapsed .composer,
+    body.left-collapsed .composer { left: 0; right: 0; }
     .thread { width: min(960px, calc(100% - 48px)); }
-    .composer-box { width: min(960px, 64%, calc(100% - 48px)); }
+    .composer-box { width: min(960px, calc(100% - 48px)); }
     .terminal-dock { width: 100%; }
     .side-button, .project-row, .recent-row { font-size: 15px; min-height: 38px; }
     .section-label { font-size: 13px; }
@@ -691,12 +775,12 @@ PAGE = """<!DOCTYPE html>
     .panel-section h3 { font-size: 14px; }
     .source-item { font-size: 13px; }
     .process { font-size: 12px; }
-    .progress-terminal { max-height: 220px; }
+    .agent-branches { grid-template-columns: 1fr; }
   }
   @media (max-width: 1250px) {
-    .app { grid-template-columns: 300px minmax(0, 1fr); }
+    .app { grid-template-columns: minmax(0, 1fr); }
     .right-panel { display: none; }
-    .composer { right: 0; left: 300px; }
+    .composer { right: 0; left: 0; }
     .thread { width: min(900px, calc(100% - 40px)); }
     .composer-box { width: min(900px, 70%, calc(100% - 40px)); }
     .terminal-dock { width: 100%; }
@@ -715,11 +799,6 @@ PAGE = """<!DOCTYPE html>
     .composer-box { width: calc(100% - 28px); }
     .terminal-dock { width: 100%; }
     .output { max-height: 96px; }
-    .progress-terminal {
-      min-height: 132px;
-      max-height: 190px;
-      font-size: 11px;
-    }
     .composer { left: 0; right: 0; }
     .user-pill { max-width: 86%; }
   }
@@ -791,16 +870,19 @@ PAGE = """<!DOCTYPE html>
     <section class="content" id="content">
       <div class="thread" id="thread">
         <div class="event">
-          <div class="user-pill">打开给我看看</div>
-        </div>
-        <div class="event">
-          <div class="event-meta"><span>就绪</span><span class="event-rule"></span></div>
           <div class="assistant-text">
-            <p>软件页面已打开。未实现的功能位置先留空，只保留当前能运行的输入和命令。</p>
+            <p>&gt; agent progress</p>
             <div class="inline-progress">
               <h3>Agent 关系与进度</h3>
-              <pre class="progress-terminal" id="progressTerminalInline">&gt; progress
-loading...</pre>
+              <div class="agent-tree-card">
+                <div class="progress-summary" id="progressSummaryInline">
+                  <div><strong>最近任务</strong>：读取中</div>
+                  <div><strong>状态</strong>：读取中</div>
+                </div>
+                <div class="agent-tree" id="agentTreeInline">
+                  <div class="tree-empty">正在读取本地方案和工作流日志。</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -869,7 +951,8 @@ loading...</pre>
   const runStatus = document.getElementById("runStatus");
   const lastCommand = document.getElementById("lastCommand");
   const providerText = document.getElementById("providerText");
-  const progressTerminalInline = document.getElementById("progressTerminalInline");
+  const progressSummaryInline = document.getElementById("progressSummaryInline");
+  const agentTreeInline = document.getElementById("agentTreeInline");
 
   function setText(node, text) {
     if (node) node.textContent = text;
@@ -923,51 +1006,89 @@ loading...</pre>
     goalInput.focus();
   }
 
-  function statusTag(status) {
+  function statusText(status) {
     return {
-      done: "[done]",
-      waiting: "[wait]",
-      running: "[run ]",
-      idle: "[----]",
-    }[status] || `[${status}]`;
+      done: "已完成",
+      waiting: "等待人工",
+      running: "进行中",
+      idle: "未开始",
+    }[status] || status;
   }
 
-  function nodeLine(node, prefix = "") {
-    return `${prefix}${statusTag(node.status)} ${node.label}  ${node.detail}`;
+  function renderAgentNode(node) {
+    const wrap = document.createElement("div");
+    wrap.className = `agent-node ${node.status}`;
+    const dot = document.createElement("span");
+    dot.className = "agent-dot";
+    const body = document.createElement("div");
+    body.className = "agent-body";
+    const label = document.createElement("div");
+    label.className = "agent-label";
+    label.textContent = node.label;
+    const meta = document.createElement("div");
+    meta.className = "agent-meta";
+    meta.textContent = `${statusText(node.status)} · ${node.detail}`;
+    body.appendChild(label);
+    body.appendChild(meta);
+    wrap.appendChild(dot);
+    wrap.appendChild(body);
+    return wrap;
   }
 
-  function progressText(data) {
+  function appendSummaryLine(container, label, value) {
+    const line = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = label;
+    line.appendChild(strong);
+    line.appendChild(document.createTextNode(`：${value}`));
+    container.appendChild(line);
+  }
+
+  function renderProgressTarget(summaryNode, treeNode, data) {
     const plan = data.latest_plan;
     const workflow = data.latest_workflow;
-    const lines = [
-      "> progress",
-      `task:   ${plan ? plan.goal : "暂无方案"}`,
-      `state:  ${plan ? plan.status : "未开始"}${workflow ? ` / log ${workflow.task_id}` : ""}`,
-      "",
-      "flow:",
-    ];
+    summaryNode.innerHTML = "";
+    appendSummaryLine(summaryNode, "最近任务", plan ? plan.goal : "暂无方案");
+    appendSummaryLine(
+      summaryNode,
+      "状态",
+      `${plan ? plan.status : "未开始"}${workflow ? ` · 日志 ${workflow.task_id}` : ""}`
+    );
+
+    treeNode.innerHTML = "";
     if (!data.nodes || data.nodes.length === 0) {
-      lines.push("  [----] 暂无可展示的 Agent 进度");
-      lines.push("         先运行 run 或 run-adaptive");
-      return lines.join("\\n");
+      const empty = document.createElement("div");
+      empty.className = "tree-empty";
+      empty.textContent = "暂无可展示的 Agent 进度。先运行 run 或 run-adaptive。";
+      treeNode.appendChild(empty);
+      return;
     }
     data.nodes.forEach((node) => {
       if (node.kind === "branch") {
-        lines.push("  branch:");
-        node.children.forEach((child, index) => {
-          const stem = index === node.children.length - 1 ? "    `- " : "    |- ";
-          lines.push(nodeLine(child, stem));
+        const branch = document.createElement("div");
+        branch.className = "agent-branches";
+        node.children.forEach((child) => {
+          const item = document.createElement("div");
+          item.className = `branch-node ${child.status}`;
+          const label = document.createElement("div");
+          label.className = "agent-label";
+          label.textContent = child.label;
+          const meta = document.createElement("div");
+          meta.className = "agent-meta";
+          meta.textContent = `${statusText(child.status)} · ${child.detail}`;
+          item.appendChild(label);
+          item.appendChild(meta);
+          branch.appendChild(item);
         });
+        treeNode.appendChild(branch);
         return;
       }
-      lines.push(nodeLine(node, "  "));
+      treeNode.appendChild(renderAgentNode(node));
     });
-    return lines.join("\\n");
   }
 
   function renderProgress(data) {
-    const text = progressText(data);
-    progressTerminalInline.textContent = text;
+    renderProgressTarget(progressSummaryInline, agentTreeInline, data);
   }
 
   async function refreshProgress() {
@@ -976,8 +1097,7 @@ loading...</pre>
       const data = await resp.json();
       if (resp.ok) renderProgress(data);
     } catch (e) {
-      const text = "> progress\\nerror: 进度读取失败";
-      progressTerminalInline.textContent = text;
+      agentTreeInline.innerHTML = '<div class="tree-empty">进度读取失败。</div>';
     }
   }
 

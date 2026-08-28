@@ -13,7 +13,7 @@
 
 阶段定位：主知识库只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + Web 终端 + 草稿应用实验能力。
 
-当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿；ReviewerAgent 在 CoderAgent 之后对代码草稿做规则版评审（检查草稿是否存在、AI 草稿正文是否太空、敏感信息、越权），不通过时最多打回 CoderAgent 重写一次，再不通过则停下交给人工处理；OrchestratorAgent 按任务复杂度从三档预设模板选择执行方案（`run-adaptive` 命令，阶段内并行），`plans` 可查看已保存方案是待批准还是已执行；Web 终端用终端式进度树显示 ContextPack、Orchestrator、人工审批和 worker 的状态。KnowledgeAgent 会从主知识库只读检索与任务相关的文档，生成知识补充文件，供后续 Agent 使用；候选知识经 AI 审查后只标记"待人工确认"，由用户 `confirm` 确认后才写入主知识库，命中敏感信息的转人工处理。`apply-draft` 处于实验阶段，可预览 Coder 草稿 diff，并在显式 `--apply` 时应用到 `src/`、`tests/`，自动测试、失败回滚、通过后本地提交。
+当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿；ReviewerAgent 在 CoderAgent 之后对代码草稿做规则版评审（检查草稿是否存在、AI 草稿正文是否太空、敏感信息、越权），不通过时最多打回 CoderAgent 重写一次，再不通过则停下交给人工处理；OrchestratorAgent 按任务复杂度从三档预设模板选择执行方案（`run-adaptive` 命令，阶段内并行），`plans` 可查看已保存方案是待批准还是已执行；Web 终端在终端式页面里保留可视化树状图，显示 ContextPack、Orchestrator、人工审批和 worker 的状态。KnowledgeAgent 会从主知识库只读检索与任务相关的文档，生成知识补充文件，供后续 Agent 使用；候选知识经 AI 审查后只标记"待人工确认"，由用户 `confirm` 确认后才写入主知识库，命中敏感信息的转人工处理。`apply-draft` 处于实验阶段，可预览 Coder 草稿 diff，并在显式 `--apply` 时应用到 `src/`、`tests/`，自动测试、失败回滚、通过后本地提交。
 
 ## 核心原则
 
