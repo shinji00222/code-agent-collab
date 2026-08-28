@@ -385,7 +385,7 @@ PAGE = """<!DOCTYPE html>
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 74px 0 300px;
+    padding: 30px 0 260px;
   }
   .thread {
     width: min(1104px, calc(100% - 72px));
@@ -455,7 +455,7 @@ PAGE = """<!DOCTYPE html>
   .resource-title { font-weight: 650; font-size: 17px; }
   .resource-subtitle { color: var(--muted); font-size: 15px; margin-top: 3px; }
   .inline-progress {
-    display: none;
+    display: block;
     margin-top: 16px;
   }
   .inline-progress h3 {
@@ -650,97 +650,21 @@ PAGE = """<!DOCTYPE html>
     text-overflow: ellipsis;
     font-size: 13px;
   }
-  .agent-tree-card {
+  .progress-terminal {
+    margin: 0;
+    min-height: 132px;
+    max-height: 220px;
+    overflow: auto;
+    border: 1px solid #333;
     border-radius: 8px;
-    background: #202020;
+    background: #101010;
+    color: #d9d9d9;
     padding: 12px;
-  }
-  .progress-summary {
-    display: grid;
-    gap: 6px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #363636;
-    color: #d8d8d8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: Consolas, "Courier New", monospace;
     font-size: 12px;
-    line-height: 1.45;
-  }
-  .progress-summary strong {
-    color: #f0f0f0;
-    font-weight: 650;
-  }
-  .agent-tree {
-    margin-top: 12px;
-    display: grid;
-  }
-  .agent-node {
-    position: relative;
-    display: grid;
-    grid-template-columns: 18px minmax(0, 1fr);
-    gap: 8px;
-    min-height: 38px;
-    padding-bottom: 12px;
-  }
-  .agent-node::before {
-    content: "";
-    position: absolute;
-    left: 8px;
-    top: 20px;
-    bottom: -2px;
-    width: 1px;
-    background: #4a4a4a;
-  }
-  .agent-node:last-child::before {
-    display: none;
-  }
-  .agent-dot {
-    position: relative;
-    z-index: 1;
-    width: 17px;
-    height: 17px;
-    margin-top: 2px;
-    border-radius: 50%;
-    border: 2px solid #777;
-    background: #202020;
-  }
-  .agent-node.done .agent-dot { border-color: var(--ok); background: var(--ok); }
-  .agent-node.waiting .agent-dot { border-color: #d7c78f; background: #554b23; }
-  .agent-node.running .agent-dot { border-color: #b9d7ff; background: #23435d; }
-  .agent-node.idle .agent-dot { border-color: #696969; }
-  .agent-body {
-    min-width: 0;
-  }
-  .agent-label {
-    color: #ededed;
-    font-size: 13px;
-    font-weight: 650;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .agent-meta {
-    margin-top: 3px;
-    color: #a7a7a7;
-    font-size: 11px;
-    line-height: 1.35;
-  }
-  .agent-branches {
-    margin: 2px 0 8px 26px;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-  }
-  .branch-node {
-    border: 1px solid #3c3c3c;
-    border-radius: 8px;
-    background: #242424;
-    padding: 7px 8px;
-  }
-  .branch-node.done { border-color: rgba(143, 215, 199, 0.65); }
-  .branch-node .agent-label { font-size: 12px; }
-  .tree-empty {
-    color: #9c9c9c;
-    font-size: 12px;
-    line-height: 1.5;
+    line-height: 1.55;
   }
   @media (max-width: 1600px) {
     .app { grid-template-columns: 290px minmax(0, 1fr) 330px; }
@@ -767,7 +691,7 @@ PAGE = """<!DOCTYPE html>
     .panel-section h3 { font-size: 14px; }
     .source-item { font-size: 13px; }
     .process { font-size: 12px; }
-    .agent-branches { grid-template-columns: 1fr; }
+    .progress-terminal { max-height: 220px; }
   }
   @media (max-width: 1250px) {
     .app { grid-template-columns: 300px minmax(0, 1fr); }
@@ -776,7 +700,6 @@ PAGE = """<!DOCTYPE html>
     .thread { width: min(900px, calc(100% - 40px)); }
     .composer-box { width: min(900px, 70%, calc(100% - 40px)); }
     .terminal-dock { width: 100%; }
-    .inline-progress { display: block; }
   }
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
@@ -786,12 +709,17 @@ PAGE = """<!DOCTYPE html>
     .window-controls { gap: 16px; }
     .sidebar { display: none; }
     .topbar { padding: 0 14px; }
-    .content { padding: 24px 0 300px; }
+    .content { padding: 18px 0 260px; }
     .event { margin: 14px 0; }
     .thread { width: calc(100% - 28px); }
     .composer-box { width: calc(100% - 28px); }
     .terminal-dock { width: 100%; }
     .output { max-height: 96px; }
+    .progress-terminal {
+      min-height: 132px;
+      max-height: 190px;
+      font-size: 11px;
+    }
     .composer { left: 0; right: 0; }
     .user-pill { max-width: 86%; }
   }
@@ -871,15 +799,8 @@ PAGE = """<!DOCTYPE html>
             <p>软件页面已打开。未实现的功能位置先留空，只保留当前能运行的输入和命令。</p>
             <div class="inline-progress">
               <h3>Agent 关系与进度</h3>
-              <div class="agent-tree-card">
-                <div class="progress-summary" id="progressSummaryInline">
-                  <div><strong>最近任务</strong>：读取中</div>
-                  <div><strong>状态</strong>：读取中</div>
-                </div>
-                <div class="agent-tree" id="agentTreeInline">
-                  <div class="tree-empty">正在读取本地方案和工作流日志。</div>
-                </div>
-              </div>
+              <pre class="progress-terminal" id="progressTerminalInline">&gt; progress
+loading...</pre>
             </div>
           </div>
         </div>
@@ -925,18 +846,6 @@ PAGE = """<!DOCTYPE html>
         <div class="info-row muted-row"><span>◉</span><strong>无法获取拉取请求状态</strong></div>
       </div>
       <div class="panel-section">
-        <h3>Agent 关系与进度</h3>
-        <div class="agent-tree-card">
-          <div class="progress-summary" id="progressSummary">
-            <div><strong>最近任务</strong>：读取中</div>
-            <div><strong>状态</strong>：读取中</div>
-          </div>
-          <div class="agent-tree" id="agentTree">
-            <div class="tree-empty">正在读取本地方案和工作流日志。</div>
-          </div>
-        </div>
-      </div>
-      <div class="panel-section">
         <h3>后台进程</h3>
         <div class="process" id="lastCommand">$env:PYTHONPATH='src'; python -m code_agent_collab.webui</div>
       </div>
@@ -960,10 +869,7 @@ PAGE = """<!DOCTYPE html>
   const runStatus = document.getElementById("runStatus");
   const lastCommand = document.getElementById("lastCommand");
   const providerText = document.getElementById("providerText");
-  const progressSummary = document.getElementById("progressSummary");
-  const agentTree = document.getElementById("agentTree");
-  const progressSummaryInline = document.getElementById("progressSummaryInline");
-  const agentTreeInline = document.getElementById("agentTreeInline");
+  const progressTerminalInline = document.getElementById("progressTerminalInline");
 
   function setText(node, text) {
     if (node) node.textContent = text;
@@ -1017,90 +923,51 @@ PAGE = """<!DOCTYPE html>
     goalInput.focus();
   }
 
-  function statusText(status) {
+  function statusTag(status) {
     return {
-      done: "已完成",
-      waiting: "等待人工",
-      running: "进行中",
-      idle: "未开始",
-    }[status] || status;
+      done: "[done]",
+      waiting: "[wait]",
+      running: "[run ]",
+      idle: "[----]",
+    }[status] || `[${status}]`;
   }
 
-  function renderAgentNode(node) {
-    const wrap = document.createElement("div");
-    wrap.className = `agent-node ${node.status}`;
-    const dot = document.createElement("span");
-    dot.className = "agent-dot";
-    const body = document.createElement("div");
-    body.className = "agent-body";
-    const label = document.createElement("div");
-    label.className = "agent-label";
-    label.textContent = node.label;
-    const meta = document.createElement("div");
-    meta.className = "agent-meta";
-    meta.textContent = `${statusText(node.status)} · ${node.detail}`;
-    body.appendChild(label);
-    body.appendChild(meta);
-    wrap.appendChild(dot);
-    wrap.appendChild(body);
-    return wrap;
+  function nodeLine(node, prefix = "") {
+    return `${prefix}${statusTag(node.status)} ${node.label}  ${node.detail}`;
   }
 
-  function appendSummaryLine(container, label, value) {
-    const line = document.createElement("div");
-    const strong = document.createElement("strong");
-    strong.textContent = label;
-    line.appendChild(strong);
-    line.appendChild(document.createTextNode(`：${value}`));
-    container.appendChild(line);
-  }
-
-  function renderProgressTarget(summaryNode, treeNode, data) {
+  function progressText(data) {
     const plan = data.latest_plan;
     const workflow = data.latest_workflow;
-    summaryNode.innerHTML = "";
-    appendSummaryLine(summaryNode, "最近任务", plan ? plan.goal : "暂无方案");
-    appendSummaryLine(
-      summaryNode,
-      "状态",
-      `${plan ? plan.status : "未开始"}${workflow ? ` · 日志 ${workflow.task_id}` : ""}`
-    );
-
-    treeNode.innerHTML = "";
+    const lines = [
+      "> progress",
+      `task:   ${plan ? plan.goal : "暂无方案"}`,
+      `state:  ${plan ? plan.status : "未开始"}${workflow ? ` / log ${workflow.task_id}` : ""}`,
+      "",
+      "flow:",
+    ];
     if (!data.nodes || data.nodes.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "tree-empty";
-      empty.textContent = "暂无可展示的 Agent 进度。先运行 run 或 run-adaptive。";
-      treeNode.appendChild(empty);
-      return;
+      lines.push("  [----] 暂无可展示的 Agent 进度");
+      lines.push("         先运行 run 或 run-adaptive");
+      return lines.join("\\n");
     }
     data.nodes.forEach((node) => {
       if (node.kind === "branch") {
-        const branch = document.createElement("div");
-        branch.className = "agent-branches";
-        node.children.forEach((child) => {
-          const item = document.createElement("div");
-          item.className = `branch-node ${child.status}`;
-          const label = document.createElement("div");
-          label.className = "agent-label";
-          label.textContent = child.label;
-          const meta = document.createElement("div");
-          meta.className = "agent-meta";
-          meta.textContent = `${statusText(child.status)} · ${child.detail}`;
-          item.appendChild(label);
-          item.appendChild(meta);
-          branch.appendChild(item);
+        lines.push("  branch:");
+        node.children.forEach((child, index) => {
+          const stem = index === node.children.length - 1 ? "    `- " : "    |- ";
+          lines.push(nodeLine(child, stem));
         });
-        treeNode.appendChild(branch);
         return;
       }
-      treeNode.appendChild(renderAgentNode(node));
+      lines.push(nodeLine(node, "  "));
     });
+    return lines.join("\\n");
   }
 
   function renderProgress(data) {
-    renderProgressTarget(progressSummary, agentTree, data);
-    renderProgressTarget(progressSummaryInline, agentTreeInline, data);
+    const text = progressText(data);
+    progressTerminalInline.textContent = text;
   }
 
   async function refreshProgress() {
@@ -1109,7 +976,8 @@ PAGE = """<!DOCTYPE html>
       const data = await resp.json();
       if (resp.ok) renderProgress(data);
     } catch (e) {
-      agentTree.innerHTML = '<div class="tree-empty">进度读取失败。</div>';
+      const text = "> progress\\nerror: 进度读取失败";
+      progressTerminalInline.textContent = text;
     }
   }
 
@@ -1389,6 +1257,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/progress":
             self._send_json(200, build_progress_snapshot(PROJECT_ROOT))
+            return
+        if self.path == "/favicon.ico":
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
             return
         self._send_json(404, {"error": "not found"})
 
