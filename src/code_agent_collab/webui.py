@@ -4,6 +4,7 @@ import argparse
 import atexit
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -453,6 +454,15 @@ PAGE = """<!DOCTYPE html>
   }
   .resource-title { font-weight: 650; font-size: 17px; }
   .resource-subtitle { color: var(--muted); font-size: 15px; margin-top: 3px; }
+  .inline-progress {
+    display: none;
+    margin-top: 16px;
+  }
+  .inline-progress h3 {
+    margin: 0 0 10px;
+    color: #bdbdbd;
+    font-size: 14px;
+  }
   .output {
     margin: 0;
     max-height: 184px;
@@ -640,6 +650,98 @@ PAGE = """<!DOCTYPE html>
     text-overflow: ellipsis;
     font-size: 13px;
   }
+  .agent-tree-card {
+    border-radius: 8px;
+    background: #202020;
+    padding: 12px;
+  }
+  .progress-summary {
+    display: grid;
+    gap: 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #363636;
+    color: #d8d8d8;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .progress-summary strong {
+    color: #f0f0f0;
+    font-weight: 650;
+  }
+  .agent-tree {
+    margin-top: 12px;
+    display: grid;
+  }
+  .agent-node {
+    position: relative;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+    min-height: 38px;
+    padding-bottom: 12px;
+  }
+  .agent-node::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 20px;
+    bottom: -2px;
+    width: 1px;
+    background: #4a4a4a;
+  }
+  .agent-node:last-child::before {
+    display: none;
+  }
+  .agent-dot {
+    position: relative;
+    z-index: 1;
+    width: 17px;
+    height: 17px;
+    margin-top: 2px;
+    border-radius: 50%;
+    border: 2px solid #777;
+    background: #202020;
+  }
+  .agent-node.done .agent-dot { border-color: var(--ok); background: var(--ok); }
+  .agent-node.waiting .agent-dot { border-color: #d7c78f; background: #554b23; }
+  .agent-node.running .agent-dot { border-color: #b9d7ff; background: #23435d; }
+  .agent-node.idle .agent-dot { border-color: #696969; }
+  .agent-body {
+    min-width: 0;
+  }
+  .agent-label {
+    color: #ededed;
+    font-size: 13px;
+    font-weight: 650;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .agent-meta {
+    margin-top: 3px;
+    color: #a7a7a7;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .agent-branches {
+    margin: 2px 0 8px 26px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .branch-node {
+    border: 1px solid #3c3c3c;
+    border-radius: 8px;
+    background: #242424;
+    padding: 7px 8px;
+  }
+  .branch-node.done { border-color: rgba(143, 215, 199, 0.65); }
+  .branch-node .agent-label { font-size: 12px; }
+  .tree-empty {
+    color: #9c9c9c;
+    font-size: 12px;
+    line-height: 1.5;
+  }
   @media (max-width: 1600px) {
     .app { grid-template-columns: 290px minmax(0, 1fr) 330px; }
     body.right-collapsed .app { grid-template-columns: 290px minmax(0, 1fr) 0; }
@@ -665,6 +767,7 @@ PAGE = """<!DOCTYPE html>
     .panel-section h3 { font-size: 14px; }
     .source-item { font-size: 13px; }
     .process { font-size: 12px; }
+    .agent-branches { grid-template-columns: 1fr; }
   }
   @media (max-width: 1250px) {
     .app { grid-template-columns: 300px minmax(0, 1fr); }
@@ -673,14 +776,22 @@ PAGE = """<!DOCTYPE html>
     .thread { width: min(900px, calc(100% - 40px)); }
     .composer-box { width: min(900px, 70%, calc(100% - 40px)); }
     .terminal-dock { width: 100%; }
+    .inline-progress { display: block; }
   }
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
+    .windowbar { padding: 0 14px; }
+    .window-menu { display: none; }
+    .window-left,
+    .window-controls { gap: 16px; }
     .sidebar { display: none; }
     .topbar { padding: 0 14px; }
+    .content { padding: 24px 0 300px; }
+    .event { margin: 14px 0; }
     .thread { width: calc(100% - 28px); }
     .composer-box { width: calc(100% - 28px); }
     .terminal-dock { width: 100%; }
+    .output { max-height: 96px; }
     .composer { left: 0; right: 0; }
     .user-pill { max-width: 86%; }
   }
@@ -758,6 +869,18 @@ PAGE = """<!DOCTYPE html>
           <div class="event-meta"><span>就绪</span><span class="event-rule"></span></div>
           <div class="assistant-text">
             <p>软件页面已打开。未实现的功能位置先留空，只保留当前能运行的输入和命令。</p>
+            <div class="inline-progress">
+              <h3>Agent 关系与进度</h3>
+              <div class="agent-tree-card">
+                <div class="progress-summary" id="progressSummaryInline">
+                  <div><strong>最近任务</strong>：读取中</div>
+                  <div><strong>状态</strong>：读取中</div>
+                </div>
+                <div class="agent-tree" id="agentTreeInline">
+                  <div class="tree-empty">正在读取本地方案和工作流日志。</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -802,6 +925,18 @@ PAGE = """<!DOCTYPE html>
         <div class="info-row muted-row"><span>◉</span><strong>无法获取拉取请求状态</strong></div>
       </div>
       <div class="panel-section">
+        <h3>Agent 关系与进度</h3>
+        <div class="agent-tree-card">
+          <div class="progress-summary" id="progressSummary">
+            <div><strong>最近任务</strong>：读取中</div>
+            <div><strong>状态</strong>：读取中</div>
+          </div>
+          <div class="agent-tree" id="agentTree">
+            <div class="tree-empty">正在读取本地方案和工作流日志。</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-section">
         <h3>后台进程</h3>
         <div class="process" id="lastCommand">$env:PYTHONPATH='src'; python -m code_agent_collab.webui</div>
       </div>
@@ -825,6 +960,10 @@ PAGE = """<!DOCTYPE html>
   const runStatus = document.getElementById("runStatus");
   const lastCommand = document.getElementById("lastCommand");
   const providerText = document.getElementById("providerText");
+  const progressSummary = document.getElementById("progressSummary");
+  const agentTree = document.getElementById("agentTree");
+  const progressSummaryInline = document.getElementById("progressSummaryInline");
+  const agentTreeInline = document.getElementById("agentTreeInline");
 
   function setText(node, text) {
     if (node) node.textContent = text;
@@ -866,6 +1005,7 @@ PAGE = """<!DOCTYPE html>
         const match = data.output.match(/当前 Provider：(.+)/);
         if (match) setText(providerText, match[1].trim());
       }
+      refreshProgress();
     } catch (e) {
       append(`网络错误：${String(e)}`, "err");
       setText(runStatus, "失败");
@@ -875,6 +1015,102 @@ PAGE = """<!DOCTYPE html>
   function fill(command) {
     goalInput.value = command;
     goalInput.focus();
+  }
+
+  function statusText(status) {
+    return {
+      done: "已完成",
+      waiting: "等待人工",
+      running: "进行中",
+      idle: "未开始",
+    }[status] || status;
+  }
+
+  function renderAgentNode(node) {
+    const wrap = document.createElement("div");
+    wrap.className = `agent-node ${node.status}`;
+    const dot = document.createElement("span");
+    dot.className = "agent-dot";
+    const body = document.createElement("div");
+    body.className = "agent-body";
+    const label = document.createElement("div");
+    label.className = "agent-label";
+    label.textContent = node.label;
+    const meta = document.createElement("div");
+    meta.className = "agent-meta";
+    meta.textContent = `${statusText(node.status)} · ${node.detail}`;
+    body.appendChild(label);
+    body.appendChild(meta);
+    wrap.appendChild(dot);
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  function appendSummaryLine(container, label, value) {
+    const line = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = label;
+    line.appendChild(strong);
+    line.appendChild(document.createTextNode(`：${value}`));
+    container.appendChild(line);
+  }
+
+  function renderProgressTarget(summaryNode, treeNode, data) {
+    const plan = data.latest_plan;
+    const workflow = data.latest_workflow;
+    summaryNode.innerHTML = "";
+    appendSummaryLine(summaryNode, "最近任务", plan ? plan.goal : "暂无方案");
+    appendSummaryLine(
+      summaryNode,
+      "状态",
+      `${plan ? plan.status : "未开始"}${workflow ? ` · 日志 ${workflow.task_id}` : ""}`
+    );
+
+    treeNode.innerHTML = "";
+    if (!data.nodes || data.nodes.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "tree-empty";
+      empty.textContent = "暂无可展示的 Agent 进度。先运行 run 或 run-adaptive。";
+      treeNode.appendChild(empty);
+      return;
+    }
+    data.nodes.forEach((node) => {
+      if (node.kind === "branch") {
+        const branch = document.createElement("div");
+        branch.className = "agent-branches";
+        node.children.forEach((child) => {
+          const item = document.createElement("div");
+          item.className = `branch-node ${child.status}`;
+          const label = document.createElement("div");
+          label.className = "agent-label";
+          label.textContent = child.label;
+          const meta = document.createElement("div");
+          meta.className = "agent-meta";
+          meta.textContent = `${statusText(child.status)} · ${child.detail}`;
+          item.appendChild(label);
+          item.appendChild(meta);
+          branch.appendChild(item);
+        });
+        treeNode.appendChild(branch);
+        return;
+      }
+      treeNode.appendChild(renderAgentNode(node));
+    });
+  }
+
+  function renderProgress(data) {
+    renderProgressTarget(progressSummary, agentTree, data);
+    renderProgressTarget(progressSummaryInline, agentTreeInline, data);
+  }
+
+  async function refreshProgress() {
+    try {
+      const resp = await fetch("/api/progress");
+      const data = await resp.json();
+      if (resp.ok) renderProgress(data);
+    } catch (e) {
+      agentTree.innerHTML = '<div class="tree-empty">进度读取失败。</div>';
+    }
   }
 
   document.querySelectorAll("[data-command]").forEach((button) => {
@@ -929,6 +1165,7 @@ PAGE = """<!DOCTYPE html>
   goalInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") document.getElementById("runTask").click();
   });
+  refreshProgress();
 </script>
 </body>
 </html>
@@ -1022,6 +1259,116 @@ def run_cli(args: list[str], timeout: int = 180) -> tuple[int, str]:
     return process.returncode, output
 
 
+def _latest_path(folder: Path, pattern: str) -> Path | None:
+    if not folder.exists():
+        return None
+    matches = sorted(folder.glob(pattern), key=lambda item: item.stat().st_mtime, reverse=True)
+    return matches[0] if matches else None
+
+
+def _node(label: str, status: str, detail: str) -> dict:
+    return {"kind": "node", "label": label, "status": status, "detail": detail}
+
+
+def _role_counts(workflow_path: Path | None) -> dict[str, int]:
+    if workflow_path is None or not workflow_path.exists():
+        return {}
+    content = workflow_path.read_text(encoding="utf-8", errors="replace")
+    counts: dict[str, int] = {}
+    for role in re.findall(r"^##\s+([A-Za-z]+Agent)\s*$", content, flags=re.MULTILINE):
+        counts[role] = counts.get(role, 0) + 1
+    return counts
+
+
+def _consume_role(counts: dict[str, int], role: str) -> bool:
+    value = counts.get(role, 0)
+    if value <= 0:
+        return False
+    counts[role] = value - 1
+    return True
+
+
+def _plan_snapshot(plan_path: Path | None, workflow_path: Path | None) -> tuple[dict | None, list[dict]]:
+    if plan_path is None:
+        return None, []
+    data = json.loads(plan_path.read_text(encoding="utf-8"))
+    task_id = data["task_id"]
+    workflow_done = workflow_path is not None and workflow_path.name == f"{task_id}-adaptive.md"
+    status = "已执行" if workflow_done else "待批准"
+    plan = {
+        "task_id": task_id,
+        "goal": data.get("goal", ""),
+        "status": status,
+        "complexity": data.get("complexity", ""),
+        "label": data.get("label", ""),
+        "worker_count": data.get("worker_count", 0),
+    }
+
+    counts = _role_counts(workflow_path if workflow_done else None)
+    nodes = [
+        _node("ContextPack", "done", "生成任务上下文包"),
+        _node("OrchestratorAgent", "done", f"{plan['complexity']} · {plan['label']}"),
+        _node("人工审批", "done" if workflow_done else "waiting", "approve 后才执行 worker"),
+    ]
+    for stage_index, stage in enumerate(data.get("stages", []), start=1):
+        children = []
+        for item in stage:
+            role = item[0]
+            label = item[1]
+            done = _consume_role(counts, role)
+            node_label = role if not label else f"{role}({label})"
+            children.append(
+                {
+                    "kind": "node",
+                    "label": node_label,
+                    "status": "done" if done else "idle",
+                    "detail": f"阶段 {stage_index}",
+                }
+            )
+        if len(children) == 1:
+            nodes.append(children[0])
+        elif children:
+            nodes.append({"kind": "branch", "children": children})
+    return plan, nodes
+
+
+def _workflow_snapshot(workflow_path: Path | None) -> tuple[dict | None, list[dict]]:
+    if workflow_path is None:
+        return None, []
+    content = workflow_path.read_text(encoding="utf-8", errors="replace")
+    roles = re.findall(r"^##\s+([A-Za-z]+Agent)\s*$", content, flags=re.MULTILINE)
+    task_match = re.search(r"^- 任务ID：(.+)$", content, flags=re.MULTILINE)
+    task_id = task_match.group(1).strip() if task_match else workflow_path.stem
+    workflow = {"task_id": task_id, "path": str(workflow_path)}
+    if not roles:
+        return workflow, []
+    nodes = [_node("ContextPack", "done", "生成任务上下文包")]
+    for role in roles:
+        nodes.append(_node(role, "done", "工作流日志已记录"))
+    return workflow, nodes
+
+
+def build_progress_snapshot(project_root: Path = PROJECT_ROOT) -> dict:
+    """构建 Web UI 使用的只读进度快照。"""
+    plan_path = _latest_path(project_root / "logs" / "plans", "*.json")
+    workflow_path = _latest_path(project_root / "logs" / "workflows", "*.md")
+    matching_workflow_path = None
+    if plan_path is not None:
+        plan_data = json.loads(plan_path.read_text(encoding="utf-8"))
+        candidate = project_root / "logs" / "workflows" / f"{plan_data['task_id']}-adaptive.md"
+        matching_workflow_path = candidate if candidate.exists() else None
+    latest_workflow, workflow_nodes = _workflow_snapshot(matching_workflow_path or workflow_path)
+    latest_plan, plan_nodes = _plan_snapshot(plan_path, matching_workflow_path)
+    if latest_plan is not None:
+        latest_workflow, _ = _workflow_snapshot(matching_workflow_path)
+    nodes = plan_nodes or workflow_nodes
+    return {
+        "latest_plan": latest_plan,
+        "latest_workflow": latest_workflow,
+        "nodes": nodes,
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -1039,6 +1386,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        if self.path == "/api/progress":
+            self._send_json(200, build_progress_snapshot(PROJECT_ROOT))
             return
         self._send_json(404, {"error": "not found"})
 

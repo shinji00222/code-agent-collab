@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from code_agent_collab.webui import (
     PAGE,
     PROJECT_ROOT,
     SRC_DIR,
     _kill_process_tree,
+    build_progress_snapshot,
     build_command,
     run_cli,
 )
@@ -64,6 +67,10 @@ class PageTests(unittest.TestCase):
         self.assertNotIn("Share", PAGE)
         self.assertNotIn("打开位置", PAGE)
         self.assertIn("环境信息", PAGE)
+        self.assertIn("Agent 关系与进度", PAGE)
+        self.assertIn("progressSummaryInline", PAGE)
+        self.assertIn("agentTreeInline", PAGE)
+        self.assertIn("/api/progress", PAGE)
         self.assertIn("只生成上下文", PAGE)
         self.assertIn("方案", PAGE)
         self.assertIn("新对话", PAGE)
@@ -75,6 +82,43 @@ class PageTests(unittest.TestCase):
         self.assertEqual(SRC_DIR, PROJECT_ROOT / "src")
         self.assertTrue((PROJECT_ROOT / "pyproject.toml").exists())
         self.assertTrue((SRC_DIR / "code_agent_collab").exists())
+
+
+class ProgressSnapshotTests(unittest.TestCase):
+    def test_progress_snapshot_reads_saved_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plans_dir = root / "logs" / "plans"
+            context_dir = root / "logs" / "context-packs"
+            plans_dir.mkdir(parents=True)
+            context_dir.mkdir(parents=True)
+            task_id = "20260828-120000-可视化"
+            (context_dir / f"{task_id}.md").write_text("# context", encoding="utf-8")
+            (plans_dir / f"{task_id}.json").write_text(
+                """{
+  "task_id": "20260828-120000-可视化",
+  "goal": "可视化关系树",
+  "orchestrator_summary": "测试方案",
+  "complexity": "complex",
+  "label": "复杂任务：知识 + 双编码 + 评审",
+  "worker_count": 4,
+  "stages": [[["KnowledgeAgent", null]], [["CoderAgent", "A"], ["CoderAgent", "B"]], [["ReviewerAgent", null]]]
+}
+""",
+                encoding="utf-8",
+            )
+
+            snapshot = build_progress_snapshot(root)
+
+            self.assertEqual(snapshot["latest_plan"]["task_id"], task_id)
+            self.assertEqual(snapshot["latest_plan"]["status"], "待批准")
+            self.assertIsNone(snapshot["latest_workflow"])
+            labels = [node.get("label", "") for node in snapshot["nodes"] if node["kind"] == "node"]
+            self.assertIn("OrchestratorAgent", labels)
+            self.assertIn("人工审批", labels)
+            branch_nodes = [node for node in snapshot["nodes"] if node["kind"] == "branch"]
+            self.assertEqual(len(branch_nodes), 1)
+            self.assertEqual(len(branch_nodes[0]["children"]), 2)
 
 
 if __name__ == "__main__":
