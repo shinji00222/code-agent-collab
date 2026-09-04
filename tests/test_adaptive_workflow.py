@@ -42,12 +42,37 @@ def _make_project(tmp: str) -> Path:
 
 
 class ApprovalGateTests(unittest.TestCase):
+    def test_create_plan_publishes_orchestrator_then_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+
+            with patch("code_agent_collab.orchestration.publish_progress") as publish:
+                create_adaptive_plan(root, "写个计算器")
+
+            first_nodes = publish.call_args_list[0].kwargs["nodes"]
+            last_nodes = publish.call_args_list[-1].kwargs["nodes"]
+
+            self.assertTrue(
+                any(
+                    node.get("label") == "Orchestrator"
+                    and node.get("status") == "running"
+                    for node in first_nodes
+                )
+            )
+            self.assertTrue(
+                any(
+                    node.get("label") == "ApprovalGate"
+                    and node.get("status") == "waiting"
+                    for node in last_nodes
+                )
+            )
+
     def test_create_plan_waits_for_approval(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_project(tmp)
             result = create_adaptive_plan(root, "写个计算器")
 
-            self.assertEqual(result.plan.worker_count, 1)
+            self.assertEqual(result.plan.worker_count, 2)
             self.assertTrue(result.plan_path.exists())
             # 计划阶段不执行任何 worker：不应产生代码草稿
             self.assertFalse(list((root / "dev-vault" / "projects").glob("*-coder-draft*.md")))
@@ -62,6 +87,7 @@ class ApprovalGateTests(unittest.TestCase):
             roles = [item.role for item in result.agent_results]
             self.assertEqual(roles[0], "OrchestratorAgent")
             self.assertIn("CoderAgent", roles)
+            self.assertIn("ReviewerAgent", roles)
             self.assertTrue(list((root / "dev-vault" / "projects").glob("*-coder-draft.md")))
             self.assertTrue(result.workflow_log_path.exists())
             self.assertTrue(result.reflection.output_path.exists())
@@ -94,8 +120,9 @@ class AdaptiveWorkflowTests(unittest.TestCase):
             self.assertEqual(roles[0], "OrchestratorAgent")
             self.assertIn("CoderAgent", roles)
             self.assertNotIn("KnowledgeAgent", roles)
-            self.assertNotIn("ReviewerAgent", roles)
-            self.assertEqual(result.plan.worker_count, 1)
+            self.assertIn("ReviewerAgent", roles)
+            self.assertGreater(roles.index("ReviewerAgent"), roles.index("CoderAgent"))
+            self.assertEqual(result.plan.worker_count, 2)
             self.assertTrue(list((root / "dev-vault" / "projects").glob("*-coder-draft.md")))
             self.assertTrue(result.workflow_log_path.exists())
             self.assertTrue(result.reflection.output_path.exists())
@@ -109,9 +136,10 @@ class AdaptiveWorkflowTests(unittest.TestCase):
 
             roles = [item.role for item in result.agent_results]
             self.assertEqual(result.plan.complexity.value, "medium")
-            self.assertEqual(result.plan.worker_count, 2)
+            self.assertEqual(result.plan.worker_count, 3)
             self.assertEqual(roles[1], "KnowledgeAgent")
             self.assertEqual(roles[2], "CoderAgent")
+            self.assertEqual(roles[3], "ReviewerAgent")
 
     def test_complex_task_parallel_coders_and_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

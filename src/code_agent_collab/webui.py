@@ -13,6 +13,9 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from .progress import read_progress
+from .webui_page import PAGE as TERMINAL_PAGE
+
 # 打包（PyInstaller）模式下没有 __file__，项目根目录取 exe 所在目录；
 # 开发模式下是仓库根目录（src/code_agent_collab/webui.py 向上三级）。
 if getattr(sys, "frozen", False):
@@ -65,7 +68,7 @@ HELP_TEXT = """可用命令（在下面输入框输入后回车）：
   pending
 """
 
-PAGE = """<!DOCTYPE html>
+_LEGACY_PAGE = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -1159,6 +1162,8 @@ PAGE = """<!DOCTYPE html>
 </html>
 """
 
+PAGE = TERMINAL_PAGE
+
 _ACTIVE_PROCESSES: set[subprocess.Popen] = set()
 
 
@@ -1338,6 +1343,7 @@ def _workflow_snapshot(workflow_path: Path | None) -> tuple[dict | None, list[di
 
 def build_progress_snapshot(project_root: Path = PROJECT_ROOT) -> dict:
     """构建 Web UI 使用的只读进度快照。"""
+    runtime_progress = read_progress(project_root)
     plan_path = _latest_path(project_root / "logs" / "plans", "*.json")
     workflow_path = _latest_path(project_root / "logs" / "workflows", "*.md")
     matching_workflow_path = None
@@ -1350,9 +1356,22 @@ def build_progress_snapshot(project_root: Path = PROJECT_ROOT) -> dict:
     if latest_plan is not None:
         latest_workflow, _ = _workflow_snapshot(matching_workflow_path)
     nodes = plan_nodes or workflow_nodes
+    if runtime_progress is not None:
+        latest_plan = latest_plan or {
+            "task_id": runtime_progress.get("task_id", ""),
+            "goal": runtime_progress.get("goal", ""),
+            "status": runtime_progress.get("status", ""),
+        }
+        return {
+            "latest_plan": latest_plan,
+            "latest_workflow": latest_workflow,
+            "runtime": runtime_progress,
+            "nodes": runtime_progress.get("nodes", []),
+        }
     return {
         "latest_plan": latest_plan,
         "latest_workflow": latest_workflow,
+        "runtime": None,
         "nodes": nodes,
     }
 

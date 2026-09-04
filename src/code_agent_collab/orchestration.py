@@ -13,6 +13,7 @@ from .agents.orchestrator import ComplexityLevel, OrchestrationPlan, WorkerSpec
 from .agents.reviewer import ReviewerAgent
 from .context_pack import ContextPackResult, create_context_pack
 from .file_utils import ensure_dir, write_text
+from .progress import publish_progress, role_stage, workflow_tree
 from .providers import AIProvider, create_provider
 from .reflection import ReflectionResult, create_reflection
 
@@ -111,6 +112,69 @@ def _rerun_coders(
             revision=revision,
         )
     ]
+
+
+def _stage_item(spec: WorkerSpec, stage_index: int) -> dict:
+    label = spec.role if not spec.label else f"{spec.role}({spec.label})"
+    return {"role": label, "label": label, "detail": f"阶段 {stage_index}"}
+
+
+def _adaptive_stages(plan: OrchestrationPlan | None = None) -> list[list[dict]]:
+    stages = [
+        role_stage("ContextPack", "生成任务上下文包"),
+        role_stage("OrchestratorAgent", "分配执行计划"),
+        role_stage("ApprovalGate", "等待 approve"),
+    ]
+    if plan is None:
+        stages.extend(
+            [
+                role_stage("CoderAgent", "生成代码草稿"),
+                role_stage("ReviewerAgent", "审查 coder 草稿"),
+                role_stage("FixLoop", "review 不通过时回到 coder 修改"),
+                role_stage("Done", "执行结束"),
+            ]
+        )
+        return stages
+
+    for stage_index, stage in enumerate(plan.stages, start=1):
+        stages.append([_stage_item(spec, stage_index) for spec in stage])
+    stages.extend(
+        [
+            role_stage("FixLoop", "review 不通过时回到 coder 修改"),
+            role_stage("ReflectorAgent", "沉淀候选复利记录"),
+            role_stage("Done", "执行结束"),
+        ]
+    )
+    return stages
+
+
+def _publish_adaptive(
+    project_root: Path,
+    *,
+    task_id: str,
+    goal: str,
+    status: str,
+    detail: str,
+    plan: OrchestrationPlan | None,
+    done: set[str],
+    running: set[str] | None = None,
+    waiting: set[str] | None = None,
+    failed: set[str] | None = None,
+) -> None:
+    publish_progress(
+        project_root,
+        task_id=task_id,
+        goal=goal,
+        status=status,
+        detail=detail,
+        nodes=workflow_tree(
+            _adaptive_stages(plan),
+            done=done,
+            running=running,
+            waiting=waiting,
+            failed=failed,
+        ),
+    )
 
 
 def _plan_to_json(plan: OrchestrationPlan, task_id: str, goal: str, summary: str) -> dict:
@@ -233,6 +297,16 @@ def _write_adaptive_log(
 def create_adaptive_plan(project_root: Path, goal: str) -> AdaptivePlanResult:
     """第一阶段：生成上下文包 + 主控产出执行方案，写入 logs/plans，等待人工审批。"""
     context_pack = create_context_pack(project_root, goal)
+    _publish_adaptive(
+        project_root,
+        task_id=context_pack.task_id,
+        goal=goal,
+        status="running",
+        detail="ContextPack 已完成，Orchestrator 正在分配计划。",
+        plan=None,
+        done={"ContextPack"},
+        running={"OrchestratorAgent"},
+    )
     context = AgentContext(
         project_root=project_root,
         task_goal=goal,
@@ -256,6 +330,16 @@ def create_adaptive_plan(project_root: Path, goal: str) -> AdaptivePlanResult:
             indent=2,
         )
         + "\n",
+    )
+    _publish_adaptive(
+        project_root,
+        task_id=context_pack.task_id,
+        goal=goal,
+        status="waiting",
+        detail="主控方案已保存，等待 approve 后执行 workers。",
+        plan=plan,
+        done={"ContextPack", "OrchestratorAgent"},
+        waiting={"ApprovalGate"},
     )
     return AdaptivePlanResult(
         task_id=context_pack.task_id,
@@ -296,10 +380,32 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
 
     results: list[AgentResult] = [orchestrator_result]
     latest_coder_specs: tuple[WorkerSpec, ...] = ()
+    done_roles: set[str] = {"ContextPack", "OrchestratorAgent", "ApprovalGate"}
+    _publish_adaptive(
+        project_root,
+        task_id=task_id,
+        goal=goal,
+        status="running",
+        detail="方案已批准，开始执行 workers。",
+        plan=plan,
+        done=done_roles,
+    )
     for stage in plan.stages:
         workers = [build_worker(spec, provider) for spec in stage]
+        running_roles = {_stage_item(spec, 0)["role"] for spec in stage}
+        _publish_adaptive(
+            project_root,
+            task_id=task_id,
+            goal=goal,
+            status="running",
+            detail="正在执行：" + " + ".join(running_roles),
+            plan=plan,
+            done=done_roles,
+            running=running_roles,
+        )
         stage_results = _run_workers(workers, context, results)
         results.extend(stage_results)
+        done_roles.update(running_roles)
         coder_specs = tuple(spec for spec in stage if spec.role == "CoderAgent")
         if coder_specs:
             latest_coder_specs = coder_specs
@@ -320,6 +426,16 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             and retry_count < MAX_REVIEW_RETRIES
         ):
             retry_count += 1
+            _publish_adaptive(
+                project_root,
+                task_id=task_id,
+                goal=goal,
+                status="running",
+                detail="ReviewerAgent 未通过，进入 Fix Loop。",
+                plan=plan,
+                done=done_roles,
+                running={"FixLoop"},
+            )
             rewrite_results = _rerun_coders(
                 latest_coder_specs,
                 provider,
@@ -329,15 +445,52 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
                 retry_count,
             )
             results.extend(rewrite_results)
+            done_roles.add("FixLoop")
+            done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_coder_specs)
             reviewer = build_worker(WorkerSpec("ReviewerAgent"), provider)
+            _publish_adaptive(
+                project_root,
+                task_id=task_id,
+                goal=goal,
+                status="running",
+                detail="CoderAgent 已重写，ReviewerAgent 正在复审。",
+                plan=plan,
+                done=done_roles,
+                running={"ReviewerAgent"},
+            )
             reviewer_result = reviewer.run(context, results)
             results.append(reviewer_result)
+            done_roles.add("ReviewerAgent")
 
         if _reviewer_needs_revision(reviewer):
+            _publish_adaptive(
+                project_root,
+                task_id=task_id,
+                goal=goal,
+                status="failed",
+                detail="ReviewerAgent 复审仍未通过，执行停止。",
+                plan=plan,
+                done=done_roles,
+                failed={"ReviewerAgent"},
+            )
             break
 
     workflow_log_path = _write_adaptive_log(project_root, task_id, goal, plan, results)
     reflection = create_reflection(project_root, task_id)
+    if not any(
+        result.role == "ReviewerAgent" and "需修改" in result.summary
+        for result in results[-1:]
+    ):
+        done_roles.update({"ReflectorAgent", "Done"})
+        _publish_adaptive(
+            project_root,
+            task_id=task_id,
+            goal=goal,
+            status="done",
+            detail="自适应工作流已完成。",
+            plan=plan,
+            done=done_roles,
+        )
     return AdaptiveWorkflowResult(
         task_id=task_id,
         context_pack=ContextPackResult(task_id=task_id, output_path=context_pack_path),

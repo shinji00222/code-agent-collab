@@ -62,22 +62,26 @@ class RunCliTests(unittest.TestCase):
 
 class PageTests(unittest.TestCase):
     def test_page_contains_task_workbench_controls(self) -> None:
-        self.assertIn("Codex", PAGE)
-        self.assertIn("文件", PAGE)
+        self.assertIn("Agent Workbench", PAGE)
+        self.assertIn("terminal", PAGE)
         self.assertNotIn("Share", PAGE)
         self.assertNotIn("打开位置", PAGE)
-        self.assertIn("环境信息", PAGE)
-        self.assertIn("Agent 关系与进度", PAGE)
+        self.assertNotIn("文件", PAGE)
+        self.assertNotIn("环境信息", PAGE)
         self.assertIn("progressSummaryInline", PAGE)
         self.assertIn("agentTreeInline", PAGE)
-        self.assertIn("agent-dot", PAGE)
+        self.assertIn("ReviewerAgent", PAGE)
+        self.assertIn("Fix Loop", PAGE)
+        self.assertIn("var(--purple)", PAGE)
+        self.assertIn("branch-child", PAGE)
+        self.assertIn("renderBranch", PAGE)
         self.assertIn("/api/progress", PAGE)
-        self.assertIn("只生成上下文", PAGE)
-        self.assertIn("方案", PAGE)
-        self.assertIn("新对话", PAGE)
-        self.assertIn("toggleLeftPanel", PAGE)
-        self.assertIn("toggleOutput", PAGE)
-        self.assertIn("toggleRightPanel", PAGE)
+        self.assertIn("setInterval(refreshProgress, 2500)", PAGE)
+        self.assertNotIn("branch-wire", PAGE)
+        self.assertNotIn("branch-grid", PAGE)
+        self.assertNotIn("toggleLeftPanel", PAGE)
+        self.assertNotIn("toggleOutput", PAGE)
+        self.assertNotIn("toggleRightPanel", PAGE)
 
     def test_webui_project_root_points_to_repository_root(self) -> None:
         self.assertEqual(SRC_DIR, PROJECT_ROOT / "src")
@@ -120,6 +124,38 @@ class ProgressSnapshotTests(unittest.TestCase):
             branch_nodes = [node for node in snapshot["nodes"] if node["kind"] == "branch"]
             self.assertEqual(len(branch_nodes), 1)
             self.assertEqual(len(branch_nodes[0]["children"]), 2)
+
+    def test_progress_snapshot_prefers_runtime_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            progress_dir = root / "logs" / "progress"
+            progress_dir.mkdir(parents=True)
+            (progress_dir / "current.json").write_text(
+                """{
+  "task_id": "runtime-task",
+  "goal": "实时树状进度",
+  "status": "running",
+  "detail": "ReviewerAgent 正在审查。",
+  "updated_at": "2026-09-04T17:20:15.000",
+  "nodes": [
+    {"kind": "node", "label": "CoderAgent", "status": "done", "detail": "生成代码草稿"},
+    {"kind": "node", "label": "ReviewerAgent", "status": "running", "detail": "审查 coder 草稿"},
+    {"kind": "node", "label": "Done", "status": "idle", "detail": "执行结束"}
+  ]
+}
+""",
+                encoding="utf-8",
+            )
+
+            snapshot = build_progress_snapshot(root)
+
+            self.assertEqual(snapshot["runtime"]["task_id"], "runtime-task")
+            labels = [node["label"] for node in snapshot["nodes"]]
+            statuses = {node["label"]: node["status"] for node in snapshot["nodes"]}
+            self.assertIn("ReviewerAgent", labels)
+            self.assertEqual(statuses["CoderAgent"], "done")
+            self.assertEqual(statuses["ReviewerAgent"], "running")
+            self.assertEqual(statuses["Done"], "idle")
 
 
 if __name__ == "__main__":

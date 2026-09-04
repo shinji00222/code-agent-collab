@@ -34,6 +34,31 @@ class AlwaysShortProvider(AIProvider):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_run_workflow_publishes_reviewer_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / "product-docs").mkdir()
+
+            with patch("code_agent_collab.workflow.publish_progress") as publish:
+                run_workflow(project_root, "测试 Reviewer 进度")
+
+            published_nodes = [
+                call.kwargs["nodes"]
+                for call in publish.call_args_list
+                if call.kwargs.get("status") == "running"
+            ]
+            reviewer_running = any(
+                node.get("label") == "ReviewerAgent" and node.get("status") == "running"
+                for nodes in published_nodes
+                for node in nodes
+                if node.get("kind") == "node"
+            )
+            final_nodes = publish.call_args_list[-1].kwargs["nodes"]
+
+            self.assertTrue(reviewer_running)
+            self.assertEqual(final_nodes[-1]["label"], "Done")
+            self.assertEqual(final_nodes[-1]["status"], "done")
+
     def test_run_workflow_creates_agent_log_and_pending_note(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

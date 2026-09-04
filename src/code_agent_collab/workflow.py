@@ -7,6 +7,7 @@ from pathlib import Path
 from .agents import AgentContext, AgentResult, create_agent
 from .context_pack import ContextPackResult, create_context_pack
 from .file_utils import ensure_dir, write_text
+from .progress import publish_progress, role_stage, workflow_tree
 from .reflection import ReflectionResult, create_reflection
 from .providers import AIProvider, create_provider
 
@@ -45,6 +46,49 @@ def _latest_coder(agents: list, reviewer_index: int):
         if hasattr(agent, "run_with_feedback"):
             return agent
     return None
+
+
+def _default_progress_stages() -> list[list[dict]]:
+    return [
+        role_stage("ContextPack", "生成任务上下文包"),
+        role_stage("CoordinatorAgent", "确定任务边界"),
+        role_stage("KnowledgeAgent", "只读检索项目知识"),
+        role_stage("PlannerAgent", "生成执行计划"),
+        role_stage("CoderAgent", "生成代码草稿"),
+        role_stage("ReviewerAgent", "审查 coder 草稿"),
+        role_stage("FixLoop", "review 不通过时回到 coder 修改"),
+        role_stage("ValidatorAgent", "验证结果"),
+        role_stage("ReflectorAgent", "沉淀候选复利记录"),
+        role_stage("Done", "工作流结束"),
+    ]
+
+
+def _publish(
+    project_root: Path,
+    *,
+    task_id: str,
+    goal: str,
+    status: str,
+    detail: str,
+    done: set[str],
+    running: set[str] | None = None,
+    waiting: set[str] | None = None,
+    failed: set[str] | None = None,
+) -> None:
+    publish_progress(
+        project_root,
+        task_id=task_id,
+        goal=goal,
+        status=status,
+        detail=detail,
+        nodes=workflow_tree(
+            _default_progress_stages(),
+            done=done,
+            running=running,
+            waiting=waiting,
+            failed=failed,
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -93,19 +137,41 @@ def _write_workflow_log(project_root: Path, task_id: str, goal: str, results: li
 
 def run_workflow(project_root: Path, goal: str) -> WorkflowResult:
     context_pack = create_context_pack(project_root, goal)
+    done_roles = {"ContextPack"}
     context = AgentContext(
         project_root=project_root,
         task_goal=goal,
         task_id=context_pack.task_id,
         context_pack_path=context_pack.output_path,
     )
+    _publish(
+        project_root,
+        task_id=context_pack.task_id,
+        goal=goal,
+        status="running",
+        detail="ContextPack 已完成，准备进入 Coordinator。",
+        done=done_roles,
+        running={"CoordinatorAgent"},
+    )
     provider = create_provider()
     agents = build_workflow_agents(provider)
 
     results: list[AgentResult] = []
+    stopped_by_review = False
     for index, agent in enumerate(agents):
+        role = getattr(agent, "role", "")
+        _publish(
+            project_root,
+            task_id=context_pack.task_id,
+            goal=goal,
+            status="running",
+            detail=f"{role} 正在工作。",
+            done=done_roles,
+            running={role},
+        )
         result = agent.run(context, results)
         results.append(result)
+        done_roles.add(role)
         if getattr(agent, "role", "") != "ReviewerAgent" or not _reviewer_needs_revision(agent):
             continue
 
@@ -113,6 +179,15 @@ def run_workflow(project_root: Path, goal: str) -> WorkflowResult:
         retry_count = 0
         while coder is not None and _reviewer_needs_revision(agent) and retry_count < MAX_REVIEW_RETRIES:
             retry_count += 1
+            _publish(
+                project_root,
+                task_id=context_pack.task_id,
+                goal=goal,
+                status="running",
+                detail="ReviewerAgent 未通过，进入 Fix Loop。",
+                done=done_roles,
+                running={"FixLoop"},
+            )
             rewrite = coder.run_with_feedback(
                 context,
                 results,
@@ -120,14 +195,45 @@ def run_workflow(project_root: Path, goal: str) -> WorkflowResult:
                 revision=retry_count,
             )
             results.append(rewrite)
+            _publish(
+                project_root,
+                task_id=context_pack.task_id,
+                goal=goal,
+                status="running",
+                detail="CoderAgent 已按 reviewer 反馈重写，进入复审。",
+                done=done_roles | {"CoderAgent", "FixLoop"},
+                running={"ReviewerAgent"},
+            )
             result = agent.run(context, results)
             results.append(result)
+            done_roles.update({"CoderAgent", "ReviewerAgent", "FixLoop"})
 
         if _reviewer_needs_revision(agent):
+            stopped_by_review = True
+            _publish(
+                project_root,
+                task_id=context_pack.task_id,
+                goal=goal,
+                status="failed",
+                detail="ReviewerAgent 复审仍未通过，工作流停止。",
+                done=done_roles,
+                failed={"ReviewerAgent"},
+            )
             break
 
     workflow_log_path = _write_workflow_log(project_root, context_pack.task_id, goal, results)
     reflection = create_reflection(project_root, context_pack.task_id)
+    if not stopped_by_review:
+        done_roles.update(item.role for item in results)
+        done_roles.update({"ReflectorAgent", "Done"})
+        _publish(
+            project_root,
+            task_id=context_pack.task_id,
+            goal=goal,
+            status="done",
+            detail="工作流已完成。",
+            done=done_roles,
+        )
     return WorkflowResult(
         task_id=context_pack.task_id,
         context_pack=context_pack,

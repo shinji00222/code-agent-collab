@@ -38,15 +38,16 @@ class OrchestrationPlan:
 TEMPLATES: dict[ComplexityLevel, OrchestrationPlan] = {
     ComplexityLevel.SIMPLE: OrchestrationPlan(
         complexity=ComplexityLevel.SIMPLE,
-        label="单干：1 个编码 worker",
-        stages=((WorkerSpec("CoderAgent"),),),
+        label="单编码 + 评审",
+        stages=((WorkerSpec("CoderAgent"),), (WorkerSpec("ReviewerAgent"),)),
     ),
     ComplexityLevel.MEDIUM: OrchestrationPlan(
         complexity=ComplexityLevel.MEDIUM,
-        label="检索 + 编码（串行 2 阶段）",
+        label="检索 + 编码 + 评审",
         stages=(
             (WorkerSpec("KnowledgeAgent"),),
             (WorkerSpec("CoderAgent"),),
+            (WorkerSpec("ReviewerAgent"),),
         ),
     ),
     ComplexityLevel.COMPLEX: OrchestrationPlan(

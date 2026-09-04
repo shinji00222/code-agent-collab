@@ -37,9 +37,12 @@ class ComplexityTests(unittest.TestCase):
         )
 
     def test_plan_worker_counts(self) -> None:
-        self.assertEqual(build_plan(ComplexityLevel.SIMPLE).worker_count, 1)
-        self.assertEqual(build_plan(ComplexityLevel.MEDIUM).worker_count, 2)
+        self.assertEqual(build_plan(ComplexityLevel.SIMPLE).worker_count, 2)
+        self.assertEqual(build_plan(ComplexityLevel.MEDIUM).worker_count, 3)
         self.assertEqual(build_plan(ComplexityLevel.COMPLEX).worker_count, 4)
+        for level in ComplexityLevel:
+            roles = [spec.role for stage in build_plan(level).stages for spec in stage]
+            self.assertIn("ReviewerAgent", roles)
 
 
 class OrchestratorAgentTests(unittest.TestCase):
@@ -57,7 +60,8 @@ class OrchestratorAgentTests(unittest.TestCase):
             self.assertIsNotNone(agent.last_plan)
             assert agent.last_plan is not None
             self.assertEqual(agent.last_plan.complexity, ComplexityLevel.SIMPLE)
-            self.assertIn("共 1 个 worker", result.summary)
+            self.assertIn("共 2 个 worker", result.summary)
+            self.assertIn("ReviewerAgent", result.outputs[-1])
 
 
 if __name__ == "__main__":
