@@ -233,6 +233,10 @@ PAGE = """<!DOCTYPE html>
     max-width: 100%;
     margin: -5px 0 0 46px;
   }
+  .tree-node > .branch {
+    grid-column: 2;
+    margin: 7px 0 0 10px;
+  }
   .branch.continues::before {
     content: "";
     position: absolute;
@@ -288,6 +292,9 @@ PAGE = """<!DOCTYPE html>
   }
   .branch-child .label {
     white-space: normal;
+  }
+  .branch-child.has-children {
+    min-height: 96px;
   }
   .join {
     display: none;
@@ -506,9 +513,9 @@ PAGE = """<!DOCTYPE html>
     return Object.prototype.hasOwnProperty.call(labels, status) ? labels[status] : status || "";
   }
 
-  function renderNode(node, className = "tree-node", noTail = false) {
+  function renderNode(node, className = "tree-node", noTail = false, depth = 0) {
     const wrap = document.createElement("div");
-    wrap.className = `${className} ${node.status || "idle"}${noTail ? " no-tail" : ""}`;
+    wrap.className = `${className} depth-${depth} ${node.status || "idle"}${noTail ? " no-tail" : ""}${node.children && node.children.length ? " has-children" : ""}`;
     const dot = document.createElement("span");
     dot.className = "dot";
     const body = document.createElement("div");
@@ -525,6 +532,9 @@ PAGE = """<!DOCTYPE html>
     body.appendChild(detail);
     wrap.appendChild(dot);
     wrap.appendChild(body);
+    if (node.children && node.children.length) {
+      wrap.appendChild(renderBranch(node.children, false, depth + 1));
+    }
     return wrap;
   }
 
@@ -532,20 +542,112 @@ PAGE = """<!DOCTYPE html>
     return children.some((child) => ["done", "running", "failed"].includes(child.status));
   }
 
-  function renderBranch(children, continues = true) {
+  function renderBranch(children, continues = true, depth = 1) {
     const branch = document.createElement("div");
-    branch.className = `branch ${branchReached(children || []) ? "reached" : ""}${continues ? " continues" : ""}`;
+    branch.className = `branch depth-${depth} ${branchReached(children || []) ? "reached" : ""}${continues ? " continues" : ""}`;
     (children || []).forEach((child) => {
-      branch.appendChild(renderNode(child, "tree-node branch-child", true));
+      branch.appendChild(renderNode(child, "tree-node branch-child", true, depth));
     });
     return branch;
+  }
+
+  function collectProgressNodes(nodes, out = []) {
+    (nodes || []).forEach((node) => {
+      if (node.kind === "branch") {
+        collectProgressNodes(node.children || [], out);
+        return;
+      }
+      out.push(node);
+    });
+    return out;
+  }
+
+  function roleName(node) {
+    if (node.role) return String(node.role);
+    const label = String(node.label || "");
+    if (label === "人工审批") return "ApprovalGate";
+    return label.replace(/\\(.+\\)$/, "");
+  }
+
+  function cloneNode(node) {
+    return {
+      kind: "node",
+      label: node.label || "",
+      status: node.status || "idle",
+      detail: node.detail || "",
+    };
+  }
+
+  function strongestStatus(items) {
+    const order = ["failed", "running", "waiting", "done", "idle"];
+    for (const status of order) {
+      if (items.some((item) => item.status === status)) return status;
+    }
+    return "idle";
+  }
+
+  function findFirstByRole(flat, role) {
+    return flat.find((node) => roleName(node) === role);
+  }
+
+  function workflowRelationTree(nodes) {
+    const flat = collectProgressNodes(nodes);
+    if (!flat.length) return [];
+    const used = new Set();
+    const take = (role) => {
+      const node = findFirstByRole(flat, role);
+      if (!node) return null;
+      used.add(node);
+      return cloneNode(node);
+    };
+    const takeAll = (role) => flat.filter((node) => roleName(node) === role).map((node) => {
+      used.add(node);
+      return cloneNode(node);
+    });
+
+    const context = take("ContextPack");
+    const orchestrator = take("OrchestratorAgent") || take("CoordinatorAgent") || take("PlannerAgent");
+    const approval = take("ApprovalGate");
+    const knowledge = take("KnowledgeAgent");
+    const coders = takeAll("CoderAgent");
+    const reviewer = take("ReviewerAgent");
+    const fixLoop = take("FixLoop");
+    const pauseGate = take("PauseGate");
+    const reflector = take("ReflectorAgent");
+    const done = take("Done");
+
+    const tree = [];
+    if (context) tree.push(context);
+    if (orchestrator) tree.push(orchestrator);
+
+    const branchChildren = [];
+    if (approval) branchChildren.push(approval);
+    if (knowledge) {
+      if (coders.length) knowledge.children = coders;
+      branchChildren.push(knowledge);
+    } else {
+      branchChildren.push(...coders);
+    }
+    if (reviewer) branchChildren.push(reviewer);
+    if (fixLoop && fixLoop.status !== "idle") branchChildren.push(fixLoop);
+    if (pauseGate && pauseGate.status !== "idle") branchChildren.push(pauseGate);
+    if (reflector) branchChildren.push(reflector);
+    if (done) branchChildren.push(done);
+
+    flat.forEach((node) => {
+      if (!used.has(node)) branchChildren.push(cloneNode(node));
+    });
+    if (branchChildren.length) {
+      tree.push({ kind: "branch", children: branchChildren, status: strongestStatus(branchChildren) });
+    }
+    return tree;
   }
 
   function renderProgress(data) {
     latestProgress = data;
     const runtime = data.runtime || {};
     const plan = data.latest_plan || {};
-    const nodes = data.nodes || [];
+    const nodes = workflowRelationTree(data.nodes || []);
     const task = runtime.goal || plan.goal || "暂无任务";
     const state = runtime.status || plan.status || "idle";
     setText(progressSummaryInline, `latest task: ${task}  |  state: ${state}`);
@@ -579,6 +681,11 @@ PAGE = """<!DOCTYPE html>
       agentTreeInline.innerHTML = '<div class="tree-empty">进度读取失败。</div>';
     }
   }
+
+  window.__agentWorkbench = {
+    renderProgress,
+    workflowRelationTree,
+  };
 
   function startPolling() {
     if (progressTimer) return;
