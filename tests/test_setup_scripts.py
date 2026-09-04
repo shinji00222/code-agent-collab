@@ -30,6 +30,17 @@ class SetupScriptTests(unittest.TestCase):
         self.assertNotIn("$pid =", text.lower())
         self.assertIsNone(re.search(r"sk-[A-Za-z0-9_-]{10,}", text))
 
+    def test_windows_package_script_includes_exes_and_provider_setup(self) -> None:
+        script = PROJECT_ROOT / "scripts" / "package-windows.ps1"
+        text = script.read_text(encoding="utf-8")
+
+        self.assertIn("build-exe.ps1", text)
+        self.assertIn("MultiAgentWorkbench.exe", text)
+        self.assertIn("AgentWorkbench-CLI.exe", text)
+        self.assertIn("setup-provider.ps1", text)
+        self.assertIn("Compress-Archive", text)
+        self.assertIn("START_HERE.txt", text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,7 @@ from code_agent_collab.webui import (
     build_command,
     clear_discussion,
     discuss_with_orchestrator,
+    force_stop_active_work,
     run_cli,
 )
 
@@ -64,6 +65,9 @@ class RunCliTests(unittest.TestCase):
             if process.poll() is None:
                 _kill_process_tree(process)
 
+    def test_force_stop_without_active_work_is_safe(self) -> None:
+        self.assertEqual(force_stop_active_work(), 0)
+
 
 class PageTests(unittest.TestCase):
     def test_page_contains_task_workbench_controls(self) -> None:
@@ -79,6 +83,13 @@ class PageTests(unittest.TestCase):
         self.assertIn("Fix Loop", PAGE)
         self.assertIn("开始协同工作", PAGE)
         self.assertIn("生成主控方案", PAGE)
+        self.assertIn("暂停工作", PAGE)
+        self.assertIn("强制停止", PAGE)
+        self.assertIn("/api/pause", PAGE)
+        self.assertIn("/api/force-stop", PAGE)
+        self.assertIn("pauseCurrentWork", PAGE)
+        self.assertIn("forceStopCurrentWork", PAGE)
+        self.assertIn('phrase !== "STOP"', PAGE)
         self.assertIn("/api/discuss", PAGE)
         self.assertIn("/api/discussion", PAGE)
         self.assertIn("createPlanFromDiscussion", PAGE)

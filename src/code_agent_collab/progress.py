@@ -19,6 +19,8 @@ ROLE_LABELS = {
     "ReviewerAgent": "ReviewerAgent",
     "ValidatorAgent": "Validator",
     "ReflectorAgent": "Reflector",
+    "PauseGate": "Pause",
+    "ForceStop": "Force Stop",
 }
 
 

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .config import save_default_config
+from .control import WorkflowPaused
 from .context_pack import create_context_pack
 from .demo import run_demo
 from .orchestration import create_adaptive_plan, execute_adaptive_plan, list_adaptive_plans
@@ -234,6 +235,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run":
         try:
             result = run_workflow(project_root, args.goal)
+        except WorkflowPaused as exc:
+            print(f"工作流已暂停：{exc}")
+            return 3
         except ValueError as exc:
             print(f"无法运行工作流：{exc}")
             return 2
@@ -263,6 +267,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "approve":
         try:
             result = execute_adaptive_plan(project_root, args.task)
+        except WorkflowPaused as exc:
+            print(f"工作流已暂停：{exc}")
+            return 3
         except (ValueError, FileNotFoundError, RuntimeError) as exc:
             print(f"无法执行计划：{exc}")
             return 2

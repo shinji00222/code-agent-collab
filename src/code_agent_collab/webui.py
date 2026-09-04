@@ -13,6 +13,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from .control import clear_pause_request, request_pause
 from .providers import ProviderConfigurationError, create_provider
 from .progress import read_progress
 from .webui_page import PAGE as TERMINAL_PAGE
@@ -1285,6 +1286,16 @@ def _shutdown_cleanup() -> None:
 atexit.register(_shutdown_cleanup)
 
 
+def force_stop_active_work() -> int:
+    processes = list(_ACTIVE_PROCESSES)
+    stopped = 0
+    for process in processes:
+        if process.poll() is None:
+            _kill_process_tree(process)
+            stopped += 1
+    return stopped
+
+
 def build_command(text: str) -> list[str]:
     args = shlex.split(text)
     if not args:
@@ -1297,6 +1308,8 @@ def build_command(text: str) -> list[str]:
 def run_cli(args: list[str], timeout: int = 180) -> tuple[int, str]:
     if args[0] == "help":
         return 0, HELP_TEXT
+    if args[0] in {"run", "run-adaptive", "approve"}:
+        clear_pause_request(PROJECT_ROOT)
     env = os.environ.copy()
     if getattr(sys, "frozen", False):
         # 打包模式：调用同目录的 CLI 可执行程序（PyInstaller 单文件模式无法 -m 启动）
@@ -1498,6 +1511,37 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "请求体不是合法 JSON"})
             except Exception as exc:  # noqa: BLE001
                 self._send_json(500, {"error": f"服务器错误：{exc}"})
+            return
+
+        if self.path == "/api/pause":
+            request_pause(PROJECT_ROOT, source="webui")
+            self._send_json(
+                200,
+                {
+                    "code": 0,
+                    "output": "已请求软暂停：当前 Agent 小步完成后，会在进入下一阶段前保存断点并暂停。",
+                },
+            )
+            return
+
+        if self.path == "/api/force-stop":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            if str(body.get("confirm", "")).strip() != "STOP":
+                self._send_json(400, {"error": "强制停止需要确认词 STOP"})
+                return
+            stopped = force_stop_active_work()
+            self._send_json(
+                200,
+                {
+                    "code": 0,
+                    "output": (
+                        f"已强制停止 {stopped} 个后台进程。"
+                        if stopped
+                        else "当前没有正在运行的后台进程。"
+                    ),
+                },
+            )
             return
 
         if self.path != "/api/command":

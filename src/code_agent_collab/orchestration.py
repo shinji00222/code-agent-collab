@@ -11,6 +11,13 @@ from .agents.coder import CoderAgent
 from .agents.knowledge import KnowledgeAgent
 from .agents.orchestrator import ComplexityLevel, OrchestrationPlan, WorkerSpec
 from .agents.reviewer import ReviewerAgent
+from .control import (
+    WorkflowPaused,
+    clear_checkpoint,
+    is_pause_requested,
+    load_checkpoint,
+    save_checkpoint,
+)
 from .context_pack import ContextPackResult, create_context_pack
 from .file_utils import ensure_dir, write_text
 from .progress import publish_progress, role_stage, workflow_tree
@@ -131,6 +138,7 @@ def _adaptive_stages(plan: OrchestrationPlan | None = None) -> list[list[dict]]:
                 role_stage("CoderAgent", "生成代码草稿"),
                 role_stage("ReviewerAgent", "审查 coder 草稿"),
                 role_stage("FixLoop", "review 不通过时回到 coder 修改"),
+                role_stage("PauseGate", "用户请求暂停"),
                 role_stage("Done", "执行结束"),
             ]
         )
@@ -141,11 +149,36 @@ def _adaptive_stages(plan: OrchestrationPlan | None = None) -> list[list[dict]]:
     stages.extend(
         [
             role_stage("FixLoop", "review 不通过时回到 coder 修改"),
+            role_stage("PauseGate", "用户请求暂停"),
             role_stage("ReflectorAgent", "沉淀候选复利记录"),
             role_stage("Done", "执行结束"),
         ]
     )
     return stages
+
+
+def _pause_if_requested(
+    project_root: Path,
+    *,
+    task_id: str,
+    goal: str,
+    plan: OrchestrationPlan,
+    done: set[str],
+    next_role: str,
+) -> None:
+    if not is_pause_requested(project_root):
+        return
+    _publish_adaptive(
+        project_root,
+        task_id=task_id,
+        goal=goal,
+        status="paused",
+        detail=f"用户已请求暂停，停在 {next_role} 之前。",
+        plan=plan,
+        done=done,
+        waiting={"PauseGate", next_role},
+    )
+    raise WorkflowPaused(f"用户已请求暂停，停在 {next_role} 之前。")
 
 
 def _publish_adaptive(
@@ -198,6 +231,18 @@ def _plan_from_json(data: dict) -> OrchestrationPlan:
         complexity=ComplexityLevel(data["complexity"]),
         label=data["label"],
         stages=stages,
+    )
+
+
+def _specs_to_json(specs: tuple[WorkerSpec, ...]) -> list[dict]:
+    return [{"role": spec.role, "label": spec.label} for spec in specs]
+
+
+def _specs_from_json(items: list[dict]) -> tuple[WorkerSpec, ...]:
+    return tuple(
+        WorkerSpec(role=str(item.get("role", "")), label=str(item.get("label", "")))
+        for item in items
+        if item.get("role")
     )
 
 
@@ -378,21 +423,42 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
         next_steps=["执行已完成，等待复盘确认。"],
     )
 
-    results: list[AgentResult] = [orchestrator_result]
-    latest_coder_specs: tuple[WorkerSpec, ...] = ()
-    done_roles: set[str] = {"ContextPack", "OrchestratorAgent", "ApprovalGate"}
+    checkpoint = load_checkpoint(project_root, task_id)
+    if checkpoint is not None:
+        results = list(checkpoint.get("agent_results", []))
+        if not results:
+            results = [orchestrator_result]
+        latest_coder_specs = _specs_from_json(checkpoint.get("latest_coder_specs", []))
+        done_roles = set(checkpoint.get("done_roles", set()))
+        start_stage_index = int(checkpoint.get("next_stage_index", 0))
+        resume_detail = f"从暂停断点继续执行，下一阶段序号：{start_stage_index + 1}。"
+    else:
+        results = [orchestrator_result]
+        latest_coder_specs = ()
+        done_roles = {"ContextPack", "OrchestratorAgent", "ApprovalGate"}
+        start_stage_index = 0
+        resume_detail = "方案已批准，开始执行 workers。"
+
     _publish_adaptive(
         project_root,
         task_id=task_id,
         goal=goal,
         status="running",
-        detail="方案已批准，开始执行 workers。",
+        detail=resume_detail,
         plan=plan,
         done=done_roles,
     )
-    for stage in plan.stages:
+    for stage_index, stage in enumerate(plan.stages[start_stage_index:], start=start_stage_index):
         workers = [build_worker(spec, provider) for spec in stage]
         running_roles = {_stage_item(spec, 0)["role"] for spec in stage}
+        _pause_if_requested(
+            project_root,
+            task_id=task_id,
+            goal=goal,
+            plan=plan,
+            done=done_roles,
+            next_role=" + ".join(running_roles),
+        )
         _publish_adaptive(
             project_root,
             task_id=task_id,
@@ -416,6 +482,14 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             if getattr(worker, "role", "") == "ReviewerAgent"
         ]
         if not reviewer_pairs:
+            save_checkpoint(
+                project_root,
+                task_id=task_id,
+                next_stage_index=stage_index + 1,
+                done_roles=done_roles,
+                agent_results=results,
+                latest_coder_specs=_specs_to_json(latest_coder_specs),
+            )
             continue
 
         reviewer, reviewer_result = reviewer_pairs[0]
@@ -426,6 +500,14 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             and retry_count < MAX_REVIEW_RETRIES
         ):
             retry_count += 1
+            _pause_if_requested(
+                project_root,
+                task_id=task_id,
+                goal=goal,
+                plan=plan,
+                done=done_roles,
+                next_role="FixLoop",
+            )
             _publish_adaptive(
                 project_root,
                 task_id=task_id,
@@ -448,6 +530,14 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             done_roles.add("FixLoop")
             done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_coder_specs)
             reviewer = build_worker(WorkerSpec("ReviewerAgent"), provider)
+            _pause_if_requested(
+                project_root,
+                task_id=task_id,
+                goal=goal,
+                plan=plan,
+                done=done_roles,
+                next_role="ReviewerAgent",
+            )
             _publish_adaptive(
                 project_root,
                 task_id=task_id,
@@ -475,6 +565,15 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             )
             break
 
+        save_checkpoint(
+            project_root,
+            task_id=task_id,
+            next_stage_index=stage_index + 1,
+            done_roles=done_roles,
+            agent_results=results,
+            latest_coder_specs=_specs_to_json(latest_coder_specs),
+        )
+
     workflow_log_path = _write_adaptive_log(project_root, task_id, goal, plan, results)
     reflection = create_reflection(project_root, task_id)
     if not any(
@@ -491,6 +590,7 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             plan=plan,
             done=done_roles,
         )
+        clear_checkpoint(project_root, task_id)
     return AdaptiveWorkflowResult(
         task_id=task_id,
         context_pack=ContextPackResult(task_id=task_id, output_path=context_pack_path),

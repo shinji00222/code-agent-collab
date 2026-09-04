@@ -5,6 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from code_agent_collab.control import (
+    WorkflowPaused,
+    clear_pause_request,
+    load_checkpoint,
+    request_pause,
+)
 from code_agent_collab.orchestration import (
     create_adaptive_plan,
     execute_adaptive_plan,
@@ -91,6 +97,45 @@ class ApprovalGateTests(unittest.TestCase):
             self.assertTrue(list((root / "dev-vault" / "projects").glob("*-coder-draft.md")))
             self.assertTrue(result.workflow_log_path.exists())
             self.assertTrue(result.reflection.output_path.exists())
+
+    def test_paused_adaptive_plan_resumes_from_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            plan_result = create_adaptive_plan(
+                root,
+                "我需要一个非常详细的完整开发计划来指导整个项目的编码工作",
+            )
+            original_run_workers = __import__(
+                "code_agent_collab.orchestration",
+                fromlist=["_run_workers"],
+            )._run_workers
+            call_count = 0
+
+            def pause_after_first_stage(workers, context, results):
+                nonlocal call_count
+                stage_results = original_run_workers(workers, context, results)
+                call_count += 1
+                if call_count == 1:
+                    request_pause(root)
+                return stage_results
+
+            with patch("code_agent_collab.orchestration._run_workers", side_effect=pause_after_first_stage):
+                with self.assertRaises(WorkflowPaused):
+                    execute_adaptive_plan(root, plan_result.task_id)
+
+            checkpoint = load_checkpoint(root, plan_result.task_id)
+            self.assertIsNotNone(checkpoint)
+            self.assertEqual(checkpoint["next_stage_index"], 1)
+            self.assertIn("KnowledgeAgent", checkpoint["done_roles"])
+
+            clear_pause_request(root)
+            result = execute_adaptive_plan(root, plan_result.task_id)
+            roles = [item.role for item in result.agent_results]
+
+            self.assertEqual(roles.count("KnowledgeAgent"), 1)
+            self.assertIn("CoderAgent", roles)
+            self.assertIn("ReviewerAgent", roles)
+            self.assertIsNone(load_checkpoint(root, plan_result.task_id))
 
     def test_list_adaptive_plans_shows_approval_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

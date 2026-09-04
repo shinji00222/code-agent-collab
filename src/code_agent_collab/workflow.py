@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .agents import AgentContext, AgentResult, create_agent
+from .control import WorkflowPaused, is_pause_requested
 from .context_pack import ContextPackResult, create_context_pack
 from .file_utils import ensure_dir, write_text
 from .progress import publish_progress, role_stage, workflow_tree
@@ -57,6 +58,7 @@ def _default_progress_stages() -> list[list[dict]]:
         role_stage("CoderAgent", "生成代码草稿"),
         role_stage("ReviewerAgent", "审查 coder 草稿"),
         role_stage("FixLoop", "review 不通过时回到 coder 修改"),
+        role_stage("PauseGate", "用户请求暂停"),
         role_stage("ValidatorAgent", "验证结果"),
         role_stage("ReflectorAgent", "沉淀候选复利记录"),
         role_stage("Done", "工作流结束"),
@@ -89,6 +91,28 @@ def _publish(
             failed=failed,
         ),
     )
+
+
+def _pause_if_requested(
+    project_root: Path,
+    *,
+    task_id: str,
+    goal: str,
+    done: set[str],
+    next_role: str,
+) -> None:
+    if not is_pause_requested(project_root):
+        return
+    _publish(
+        project_root,
+        task_id=task_id,
+        goal=goal,
+        status="paused",
+        detail=f"用户已请求暂停，停在 {next_role} 之前。",
+        done=done,
+        waiting={"PauseGate", next_role},
+    )
+    raise WorkflowPaused(f"用户已请求暂停，停在 {next_role} 之前。")
 
 
 @dataclass(frozen=True)
@@ -160,6 +184,13 @@ def run_workflow(project_root: Path, goal: str) -> WorkflowResult:
     stopped_by_review = False
     for index, agent in enumerate(agents):
         role = getattr(agent, "role", "")
+        _pause_if_requested(
+            project_root,
+            task_id=context_pack.task_id,
+            goal=goal,
+            done=done_roles,
+            next_role=role,
+        )
         _publish(
             project_root,
             task_id=context_pack.task_id,
@@ -179,6 +210,13 @@ def run_workflow(project_root: Path, goal: str) -> WorkflowResult:
         retry_count = 0
         while coder is not None and _reviewer_needs_revision(agent) and retry_count < MAX_REVIEW_RETRIES:
             retry_count += 1
+            _pause_if_requested(
+                project_root,
+                task_id=context_pack.task_id,
+                goal=goal,
+                done=done_roles,
+                next_role="FixLoop",
+            )
             _publish(
                 project_root,
                 task_id=context_pack.task_id,
@@ -195,6 +233,13 @@ def run_workflow(project_root: Path, goal: str) -> WorkflowResult:
                 revision=retry_count,
             )
             results.append(rewrite)
+            _pause_if_requested(
+                project_root,
+                task_id=context_pack.task_id,
+                goal=goal,
+                done=done_roles | {"CoderAgent", "FixLoop"},
+                next_role="ReviewerAgent",
+            )
             _publish(
                 project_root,
                 task_id=context_pack.task_id,

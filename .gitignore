@@ -15,3 +15,4 @@ logs/context-packs/
 logs/workflows/
 logs/plans/
 logs/progress/
+logs/control/
