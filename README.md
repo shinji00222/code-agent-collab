@@ -9,7 +9,7 @@
 
 ## 当前版本
 
-当前版本：`v0.10.3`（开发版）
+当前版本：`v0.10.4`（开发版）
 
 阶段定位：主知识库只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + Web 终端 + 草稿应用实验能力。
 
@@ -83,7 +83,7 @@ python -m code_agent_collab.webui
 
 切换到 DeepSeek：
 
-最省事的方式：复制下面这一条命令到 PowerShell，然后用数字菜单选择：
+最省事的方式：复制下面这一条命令到 PowerShell，然后用数字菜单选择厂商和动作：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "C:\Users\lwz12\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手\scripts\setup-deepseek.ps1"
@@ -92,12 +92,13 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\lwz12\Desktop\AI工作台知�
 菜单里可以选：
 
 - `1`：配置 DeepSeek API，按提示回答 `y/n`，最后只在本机终端窗口粘贴 DeepSeek API Key。
-- `2`：停止真实 API 调用，切回本地 mock；如需删除本机保存的 DeepSeek Key，会再单独确认。
-- `3`：查看当前 Provider 状态。
-- `4`：启动 Web UI。
-- `5`：退出。
+- `2`：配置 OpenAI API，按提示回答 `y/n`，最后只在本机终端窗口粘贴 OpenAI API Key。
+- `3`：停止真实 API 调用，切回本地 mock；如需删除本机保存的 DeepSeek/OpenAI Key，会分别单独确认。
+- `4`：查看当前 Provider 状态。
+- `5`：启动 Web UI。
+- `6`：退出。
 
-脚本会把 `AGENT_WORKBENCH_PROVIDER=deepseek` 和 `DEEPSEEK_API_KEY` 写入当前 Windows 用户环境变量，不写入仓库文件，也不会把 Key 打印出来。
+脚本会把 Provider 名和对应 API Key 写入当前 Windows 用户环境变量，不写入仓库文件，也不会把 Key 打印出来。
 
 临时切换方式：
 

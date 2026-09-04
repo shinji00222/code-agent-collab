@@ -30,7 +30,9 @@ function Ask-YesNo {
 }
 
 function Read-HiddenApiKey {
-    $secureKey = Read-Host "Paste DeepSeek API Key (input hidden)" -AsSecureString
+    param([Parameter(Mandatory = $true)][string]$ProviderLabel)
+
+    $secureKey = Read-Host "Paste $ProviderLabel API Key (input hidden)" -AsSecureString
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
 
     try {
@@ -76,26 +78,32 @@ function Start-AgentWorkbenchWebUi {
     python -m code_agent_collab.webui --port $UiPort
 }
 
-function Enable-DeepSeekProvider {
+function Enable-RealProvider {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProviderName,
+        [Parameter(Mandatory = $true)][string]$ProviderLabel,
+        [Parameter(Mandatory = $true)][string]$ApiKeyEnvName
+    )
+
     Write-Host ""
     Write-Host "This stores provider/key in Windows User environment variables, not in repo files."
     Write-Host "Do not paste your API Key into chat. Paste it only in this local terminal window."
 
-    if (-not (Ask-YesNo "Continue configuring DeepSeek?")) {
+    if (-not (Ask-YesNo "Continue configuring $ProviderLabel?")) {
         Write-Host "Cancelled."
         return
     }
 
-    $apiKey = Read-HiddenApiKey
+    $apiKey = Read-HiddenApiKey -ProviderLabel $ProviderLabel
     if ([string]::IsNullOrWhiteSpace($apiKey)) {
         Write-Host "API Key is empty. Cancelled." -ForegroundColor Red
         return
     }
 
-    [Environment]::SetEnvironmentVariable("AGENT_WORKBENCH_PROVIDER", "deepseek", "User")
-    [Environment]::SetEnvironmentVariable("DEEPSEEK_API_KEY", $apiKey, "User")
-    $env:AGENT_WORKBENCH_PROVIDER = "deepseek"
-    $env:DEEPSEEK_API_KEY = $apiKey
+    [Environment]::SetEnvironmentVariable("AGENT_WORKBENCH_PROVIDER", $ProviderName, "User")
+    [Environment]::SetEnvironmentVariable($ApiKeyEnvName, $apiKey, "User")
+    $env:AGENT_WORKBENCH_PROVIDER = $ProviderName
+    Set-Item -Path "Env:\$ApiKeyEnvName" -Value $apiKey
 
     Write-Host "Saved."
     Show-ProviderStatus
@@ -123,6 +131,12 @@ function Disable-RealProvider {
         Write-Host "DeepSeek API Key removed from User environment variables."
     }
 
+    if (Ask-YesNo "Also remove the saved OpenAI API Key from Windows User environment variables?" $false) {
+        [Environment]::SetEnvironmentVariable("OPENAI_API_KEY", $null, "User")
+        Remove-Item Env:\OPENAI_API_KEY -ErrorAction SilentlyContinue
+        Write-Host "OpenAI API Key removed from User environment variables."
+    }
+
     Write-Host "Saved."
     Show-ProviderStatus
 }
@@ -131,20 +145,22 @@ function Read-MenuChoice {
     Write-Host ""
     Write-Host "Choose an action:"
     Write-Host "1) Configure DeepSeek API"
-    Write-Host "2) Stop API calls and switch back to local mock"
-    Write-Host "3) Show current provider status"
-    Write-Host "4) Start Web UI"
-    Write-Host "5) Exit"
+    Write-Host "2) Configure OpenAI API"
+    Write-Host "3) Stop API calls and switch back to local mock"
+    Write-Host "4) Show current provider status"
+    Write-Host "5) Start Web UI"
+    Write-Host "6) Exit"
 
     while ($true) {
-        $choice = Read-Host "Enter 1/2/3/4/5"
+        $choice = Read-Host "Enter 1/2/3/4/5/6"
         switch ($choice.Trim()) {
-            "1" { return "configure" }
-            "2" { return "disable" }
-            "3" { return "status" }
-            "4" { return "webui" }
-            "5" { return "exit" }
-            default { Write-Host "Please enter 1, 2, 3, 4, or 5." -ForegroundColor Yellow }
+            "1" { return "configure-deepseek" }
+            "2" { return "configure-openai" }
+            "3" { return "disable" }
+            "4" { return "status" }
+            "5" { return "webui" }
+            "6" { return "exit" }
+            default { Write-Host "Please enter 1, 2, 3, 4, 5, or 6." -ForegroundColor Yellow }
         }
     }
 }
@@ -159,12 +175,17 @@ if ($CheckOnly) {
     exit $LASTEXITCODE
 }
 
-Write-Host "DeepSeek setup wizard for Agent Workbench."
+Write-Host "AI provider setup wizard for Agent Workbench."
 
 while ($true) {
     $action = Read-MenuChoice
     switch ($action) {
-        "configure" { Enable-DeepSeekProvider }
+        "configure-deepseek" {
+            Enable-RealProvider -ProviderName "deepseek" -ProviderLabel "DeepSeek" -ApiKeyEnvName "DEEPSEEK_API_KEY"
+        }
+        "configure-openai" {
+            Enable-RealProvider -ProviderName "openai" -ProviderLabel "OpenAI" -ApiKeyEnvName "OPENAI_API_KEY"
+        }
         "disable" { Disable-RealProvider }
         "status" { Show-ProviderStatus }
         "webui" { Start-AgentWorkbenchWebUi -UiPort $Port }
