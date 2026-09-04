@@ -294,6 +294,16 @@ PAGE = """<!DOCTYPE html>
     padding: 4px 9px;
     font-size: 12px;
   }
+  .quickbar .collab-switch {
+    border-color: rgba(184,108,255,0.78);
+    color: var(--purple-2);
+    box-shadow: 0 0 14px rgba(184,108,255,0.16);
+  }
+  .mode-hint {
+    margin-top: 10px;
+    color: #6f6875;
+    font-size: 12px;
+  }
   .output {
     margin-top: 10px;
     max-width: 1040px;
@@ -395,6 +405,7 @@ PAGE = """<!DOCTYPE html>
         </div>
       </section>
       <div class="quickbar">
+        <button class="collab-switch" id="startCollab" type="button">开始协同工作</button>
         <button data-fill='run-adaptive "实现终端树状进度"'>run-adaptive</button>
         <button data-fill='plans'>plans</button>
         <button data-fill='approve '>approve</button>
@@ -402,6 +413,7 @@ PAGE = """<!DOCTYPE html>
         <button data-fill='provider'>provider</button>
         <button data-fill='help'>help</button>
       </div>
+      <div class="mode-hint" id="modeHint">默认：单 AI 讨论/规划。直接输入任务只生成方案；点“开始协同工作”才执行后续 Agent。</div>
       <pre class="output" id="output">&gt; provider
 当前 Provider：mock
 模型：mock-model
@@ -426,6 +438,9 @@ PAGE = """<!DOCTYPE html>
   const progressSummaryInline = document.getElementById("progressSummaryInline");
   const agentTreeInline = document.getElementById("agentTreeInline");
   const screen = document.getElementById("screen");
+  const startCollab = document.getElementById("startCollab");
+  const modeHint = document.getElementById("modeHint");
+  let latestProgress = null;
   let progressTimer = null;
 
   function setText(node, text) {
@@ -496,6 +511,7 @@ PAGE = """<!DOCTYPE html>
   }
 
   function renderProgress(data) {
+    latestProgress = data;
     const runtime = data.runtime || {};
     const plan = data.latest_plan || {};
     const nodes = data.nodes || [];
@@ -587,8 +603,32 @@ PAGE = """<!DOCTYPE html>
     goalInput.focus();
   }
 
+  async function beginCollaboration() {
+    await refreshProgress();
+    const plan = latestProgress && latestProgress.latest_plan ? latestProgress.latest_plan : {};
+    const taskId = plan.task_id || "";
+    if (!taskId) {
+      append("还没有可执行的主控方案。先输入任务目标，让 OrchestratorAgent 生成计划。", "err");
+      goalInput.focus();
+      return;
+    }
+    if (plan.status === "已执行" || (latestProgress.runtime || {}).status === "done") {
+      append(`最近方案已经执行过：${taskId}`, "out");
+      return;
+    }
+    if (startCollab) startCollab.disabled = true;
+    setText(modeHint, `协同工作已开启：正在批准并执行 ${taskId}`);
+    await run(`approve ${taskId}`);
+    if (startCollab) startCollab.disabled = false;
+    setText(modeHint, "默认：单 AI 讨论/规划。直接输入任务只生成方案；点“开始协同工作”才执行后续 Agent。");
+  }
+
   document.querySelectorAll("[data-fill]").forEach((button) => {
     button.addEventListener("click", () => fill(button.dataset.fill));
+  });
+
+  startCollab.addEventListener("click", () => {
+    beginCollaboration();
   });
 
   document.getElementById("runTask").addEventListener("click", () => {
@@ -597,7 +637,7 @@ PAGE = """<!DOCTYPE html>
     if (/^(pending|plans|review|provider|help|confirm|discard|demo|start|run|run-adaptive|approve)\\b/.test(goal)) {
       run(goal);
     } else {
-      run(`run ${quoteArg(goal)}`);
+      run(`run-adaptive ${quoteArg(goal)}`);
     }
   });
 
