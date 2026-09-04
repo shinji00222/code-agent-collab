@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from code_agent_collab.webui import (
     PAGE,
@@ -12,7 +14,10 @@ from code_agent_collab.webui import (
     SRC_DIR,
     _kill_process_tree,
     build_progress_snapshot,
+    build_discussion_goal,
     build_command,
+    clear_discussion,
+    discuss_with_orchestrator,
     run_cli,
 )
 
@@ -73,6 +78,11 @@ class PageTests(unittest.TestCase):
         self.assertIn("ReviewerAgent", PAGE)
         self.assertIn("Fix Loop", PAGE)
         self.assertIn("开始协同工作", PAGE)
+        self.assertIn("生成主控方案", PAGE)
+        self.assertIn("/api/discuss", PAGE)
+        self.assertIn("/api/discussion", PAGE)
+        self.assertIn("createPlanFromDiscussion", PAGE)
+        self.assertIn("discuss(goal)", PAGE)
         self.assertIn("beginCollaboration", PAGE)
         self.assertIn("run-adaptive ${quoteArg(goal)}", PAGE)
         self.assertIn("approve ${taskId}", PAGE)
@@ -88,6 +98,33 @@ class PageTests(unittest.TestCase):
         self.assertNotIn("toggleLeftPanel", PAGE)
         self.assertNotIn("toggleOutput", PAGE)
         self.assertNotIn("toggleRightPanel", PAGE)
+
+
+class DiscussionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        clear_discussion()
+
+    def tearDown(self) -> None:
+        clear_discussion()
+
+    def test_discussion_asks_questions_before_plan(self) -> None:
+        with patch.dict(os.environ, {"AGENT_WORKBENCH_PROVIDER": "mock"}, clear=False):
+            result = discuss_with_orchestrator("做一个待办页面")
+
+        self.assertIn("确认", result["output"])
+        self.assertIn("做一个待办页面", result["goal"])
+        self.assertEqual(build_discussion_goal(), "做一个待办页面")
+
+    def test_discussion_goal_keeps_user_supplements(self) -> None:
+        with patch.dict(os.environ, {"AGENT_WORKBENCH_PROVIDER": "mock"}, clear=False):
+            discuss_with_orchestrator("做一个待办页面")
+            discuss_with_orchestrator("保留终端页面，只改输入对话")
+
+        goal = build_discussion_goal()
+
+        self.assertIn("做一个待办页面", goal)
+        self.assertIn("讨论补充", goal)
+        self.assertIn("保留终端页面，只改输入对话", goal)
 
     def test_webui_project_root_points_to_repository_root(self) -> None:
         self.assertEqual(SRC_DIR, PROJECT_ROOT / "src")

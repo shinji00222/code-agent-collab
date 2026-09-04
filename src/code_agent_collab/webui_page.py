@@ -419,6 +419,7 @@ PAGE = """<!DOCTYPE html>
         </div>
       </section>
       <div class="quickbar">
+        <button class="collab-switch" id="createPlan" type="button">生成主控方案</button>
         <button class="collab-switch" id="startCollab" type="button">开始协同工作</button>
         <button data-fill='run-adaptive "实现终端树状进度"'>run-adaptive</button>
         <button data-fill='plans'>plans</button>
@@ -427,7 +428,7 @@ PAGE = """<!DOCTYPE html>
         <button data-fill='provider'>provider</button>
         <button data-fill='help'>help</button>
       </div>
-      <div class="mode-hint" id="modeHint">默认：单 AI 讨论/规划。直接输入任务只生成方案；点“开始协同工作”才执行后续 Agent。</div>
+      <div class="mode-hint" id="modeHint">默认：先和第一个 AI 对话澄清需求；点“生成主控方案”后只生成方案；点“开始协同工作”才执行后续 Agent。</div>
       <pre class="output" id="output">&gt; provider
 当前 Provider：mock
 模型：mock-model
@@ -452,6 +453,7 @@ PAGE = """<!DOCTYPE html>
   const progressSummaryInline = document.getElementById("progressSummaryInline");
   const agentTreeInline = document.getElementById("agentTreeInline");
   const screen = document.getElementById("screen");
+  const createPlan = document.getElementById("createPlan");
   const startCollab = document.getElementById("startCollab");
   const modeHint = document.getElementById("modeHint");
   let latestProgress = null;
@@ -612,6 +614,30 @@ PAGE = """<!DOCTYPE html>
     }
   }
 
+  async function discuss(message) {
+    if (!message.trim()) return;
+    setText(runStatus, "discussing");
+    append(`[${nowStamp()}] shin: ${message}`, "cmdline");
+    try {
+      const resp = await fetch("/api/discuss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        append(data.error || "讨论请求失败", "err");
+        setText(runStatus, "failed");
+        return;
+      }
+      append(`[${nowStamp()}] OrchestratorAgent: ${data.output || "我已记录。"}`, "out");
+      setText(runStatus, "discuss");
+    } catch (e) {
+      append(`网络错误：${String(e)}`, "err");
+      setText(runStatus, "failed");
+    }
+  }
+
   function fill(command) {
     goalInput.value = command;
     goalInput.focus();
@@ -634,7 +660,31 @@ PAGE = """<!DOCTYPE html>
     setText(modeHint, `协同工作已开启：正在批准并执行 ${taskId}`);
     await run(`approve ${taskId}`);
     if (startCollab) startCollab.disabled = false;
-    setText(modeHint, "默认：单 AI 讨论/规划。直接输入任务只生成方案；点“开始协同工作”才执行后续 Agent。");
+    setText(modeHint, "默认：先和第一个 AI 对话澄清需求；点“生成主控方案”后只生成方案；点“开始协同工作”才执行后续 Agent。");
+  }
+
+  async function createPlanFromDiscussion() {
+    const typed = goalInput.value.trim();
+    if (typed && !/^(pending|plans|review|provider|help|confirm|discard|demo|start|run|run-adaptive|approve)\\b/.test(typed)) {
+      await discuss(typed);
+      goalInput.value = "";
+    }
+    try {
+      const resp = await fetch("/api/discussion", { cache: "no-store" });
+      const data = await resp.json();
+      const goal = (data.goal || "").trim();
+      if (!goal) {
+        append("还没有讨论内容。先直接输入你的想法，我会先问问题。", "err");
+        goalInput.focus();
+        return;
+      }
+      setText(modeHint, "正在把讨论内容整理成主控方案；还不会执行后续 Agent。");
+      await run(`run-adaptive ${quoteArg(goal)}`);
+      setText(modeHint, "方案已生成。继续讨论可补充需求；要执行后续 Agent 再点“开始协同工作”。");
+    } catch (e) {
+      append(`生成方案失败：${String(e)}`, "err");
+      setText(runStatus, "failed");
+    }
   }
 
   document.querySelectorAll("[data-fill]").forEach((button) => {
@@ -645,14 +695,19 @@ PAGE = """<!DOCTYPE html>
     beginCollaboration();
   });
 
+  createPlan.addEventListener("click", () => {
+    createPlanFromDiscussion();
+  });
+
   document.getElementById("runTask").addEventListener("click", () => {
     const goal = goalInput.value.trim();
     if (!goal) return;
     if (/^(pending|plans|review|provider|help|confirm|discard|demo|start|run|run-adaptive|approve)\\b/.test(goal)) {
       run(goal);
     } else {
-      run(`run-adaptive ${quoteArg(goal)}`);
+      discuss(goal);
     }
+    goalInput.value = "";
   });
 
   goalInput.addEventListener("keydown", (event) => {
