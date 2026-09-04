@@ -79,6 +79,8 @@ class PageTests(unittest.TestCase):
         self.assertIn("var(--purple)", PAGE)
         self.assertIn("branch-child", PAGE)
         self.assertIn("renderBranch", PAGE)
+        self.assertIn("branch.continues::before", PAGE)
+        self.assertIn("index < nodes.length - 1", PAGE)
         self.assertIn("/api/progress", PAGE)
         self.assertIn("setInterval(refreshProgress, 2500)", PAGE)
         self.assertNotIn("branch-wire", PAGE)

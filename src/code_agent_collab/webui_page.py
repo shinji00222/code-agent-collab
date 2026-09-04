@@ -233,6 +233,20 @@ PAGE = """<!DOCTYPE html>
     max-width: 100%;
     margin: -5px 0 0 46px;
   }
+  .branch.continues::before {
+    content: "";
+    position: absolute;
+    left: -16px;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    background-image: linear-gradient(var(--dim) 48%, transparent 0);
+    background-size: 2px 8px;
+  }
+  .branch.reached.continues::before {
+    background: var(--purple);
+    box-shadow: 0 0 16px rgba(184,108,255,0.45);
+  }
   .branch-child {
     margin-left: 0;
     padding-left: 42px;
@@ -501,9 +515,9 @@ PAGE = """<!DOCTYPE html>
     return children.some((child) => ["done", "running", "failed"].includes(child.status));
   }
 
-  function renderBranch(children) {
+  function renderBranch(children, continues = true) {
     const branch = document.createElement("div");
-    branch.className = `branch ${branchReached(children || []) ? "reached" : ""}`;
+    branch.className = `branch ${branchReached(children || []) ? "reached" : ""}${continues ? " continues" : ""}`;
     (children || []).forEach((child) => {
       branch.appendChild(renderNode(child, "tree-node branch-child", true));
     });
@@ -532,7 +546,7 @@ PAGE = """<!DOCTYPE html>
 
     nodes.forEach((node, index) => {
       if (node.kind === "branch") {
-        agentTreeInline.appendChild(renderBranch(node.children || []));
+        agentTreeInline.appendChild(renderBranch(node.children || [], index < nodes.length - 1));
         return;
       }
       agentTreeInline.appendChild(renderNode(node, "tree-node", index === nodes.length - 1));
