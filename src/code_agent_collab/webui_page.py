@@ -572,18 +572,20 @@ PAGE = """<!DOCTYPE html>
   function cloneNode(node) {
     return {
       kind: "node",
-      label: node.label || "",
+      label: roleName(node) === "ApprovalGate" ? "人工审批" : node.label || "",
       status: node.status || "idle",
       detail: node.detail || "",
     };
   }
 
-  function strongestStatus(items) {
-    const order = ["failed", "running", "waiting", "done", "idle"];
-    for (const status of order) {
-      if (items.some((item) => item.status === status)) return status;
-    }
-    return "idle";
+  function placeholderNode(role, label, detail = "") {
+    return {
+      kind: "node",
+      label,
+      status: "idle",
+      detail,
+      role,
+    };
   }
 
   function findFirstByRole(flat, role) {
@@ -607,8 +609,8 @@ PAGE = """<!DOCTYPE html>
 
     const context = take("ContextPack");
     const orchestrator = take("OrchestratorAgent") || take("CoordinatorAgent") || take("PlannerAgent");
-    const approval = take("ApprovalGate");
-    const knowledge = take("KnowledgeAgent");
+    const approval = take("ApprovalGate") || placeholderNode("ApprovalGate", "人工审批");
+    const knowledge = take("KnowledgeAgent") || placeholderNode("KnowledgeAgent", "KnowledgeAgent");
     const coders = takeAll("CoderAgent");
     const reviewer = take("ReviewerAgent");
     const fixLoop = take("FixLoop");
@@ -620,26 +622,18 @@ PAGE = """<!DOCTYPE html>
     if (context) tree.push(context);
     if (orchestrator) tree.push(orchestrator);
 
-    const branchChildren = [];
-    if (approval) branchChildren.push(approval);
-    if (knowledge) {
-      if (coders.length) knowledge.children = coders;
-      branchChildren.push(knowledge);
-    } else {
-      branchChildren.push(...coders);
-    }
-    if (reviewer) branchChildren.push(reviewer);
-    if (fixLoop && fixLoop.status !== "idle") branchChildren.push(fixLoop);
-    if (pauseGate && pauseGate.status !== "idle") branchChildren.push(pauseGate);
-    if (reflector) branchChildren.push(reflector);
-    if (done) branchChildren.push(done);
+    tree.push(approval);
+    if (coders.length) knowledge.children = coders;
+    tree.push(knowledge);
+    if (reviewer) tree.push(reviewer);
+    if (fixLoop && fixLoop.status !== "idle") tree.push(fixLoop);
+    if (pauseGate && pauseGate.status !== "idle") tree.push(pauseGate);
+    if (reflector) tree.push(reflector);
+    if (done) tree.push(done);
 
     flat.forEach((node) => {
-      if (!used.has(node)) branchChildren.push(cloneNode(node));
+      if (!used.has(node)) tree.push(cloneNode(node));
     });
-    if (branchChildren.length) {
-      tree.push({ kind: "branch", children: branchChildren, status: strongestStatus(branchChildren) });
-    }
     return tree;
   }
 
@@ -681,11 +675,6 @@ PAGE = """<!DOCTYPE html>
       agentTreeInline.innerHTML = '<div class="tree-empty">进度读取失败。</div>';
     }
   }
-
-  window.__agentWorkbench = {
-    renderProgress,
-    workflowRelationTree,
-  };
 
   function startPolling() {
     if (progressTimer) return;
