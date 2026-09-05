@@ -84,10 +84,12 @@ class PageTests(unittest.TestCase):
         self.assertIn("开始协同工作", PAGE)
         self.assertIn("生成主控方案", PAGE)
         self.assertIn("暂停工作", PAGE)
+        self.assertIn("继续暂停任务", PAGE)
         self.assertIn("强制停止", PAGE)
         self.assertIn("/api/pause", PAGE)
         self.assertIn("/api/force-stop", PAGE)
         self.assertIn("pauseCurrentWork", PAGE)
+        self.assertIn("resumePausedWork", PAGE)
         self.assertIn("forceStopCurrentWork", PAGE)
         self.assertIn('phrase !== "STOP"', PAGE)
         self.assertIn("/api/discuss", PAGE)
@@ -97,6 +99,8 @@ class PageTests(unittest.TestCase):
         self.assertIn("beginCollaboration", PAGE)
         self.assertIn("run-adaptive ${quoteArg(goal)}", PAGE)
         self.assertIn("approve ${taskId}", PAGE)
+        self.assertIn("latest_checkpoint", PAGE)
+        self.assertIn("checkpoint ready", PAGE)
         self.assertIn("var(--purple)", PAGE)
         self.assertIn("branch-child", PAGE)
         self.assertIn("renderBranch", PAGE)
@@ -181,6 +185,47 @@ class ProgressSnapshotTests(unittest.TestCase):
             branch_nodes = [node for node in snapshot["nodes"] if node["kind"] == "branch"]
             self.assertEqual(len(branch_nodes), 1)
             self.assertEqual(len(branch_nodes[0]["children"]), 2)
+
+    def test_progress_snapshot_exposes_pause_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plans_dir = root / "logs" / "plans"
+            control_dir = root / "logs" / "control"
+            plans_dir.mkdir(parents=True)
+            control_dir.mkdir(parents=True)
+            task_id = "20260905-101010-暂停任务"
+            (plans_dir / f"{task_id}.json").write_text(
+                """{
+  "task_id": "20260905-101010-暂停任务",
+  "goal": "暂停后继续执行",
+  "orchestrator_summary": "测试方案",
+  "complexity": "medium",
+  "label": "检索 + 编码 + 评审",
+  "worker_count": 3,
+  "stages": [[["KnowledgeAgent", null]], [["CoderAgent", null]], [["ReviewerAgent", null]]]
+}
+""",
+                encoding="utf-8",
+            )
+            (control_dir / f"{task_id}.checkpoint.json").write_text(
+                """{
+  "task_id": "20260905-101010-暂停任务",
+  "next_stage_index": 1,
+  "done_roles": ["ContextPack", "OrchestratorAgent", "ApprovalGate", "KnowledgeAgent"],
+  "agent_results": [],
+  "latest_coder_specs": [],
+  "updated_at": "2026-09-05T10:10:30.000"
+}
+""",
+                encoding="utf-8",
+            )
+
+            snapshot = build_progress_snapshot(root)
+
+            self.assertEqual(snapshot["latest_checkpoint"]["task_id"], task_id)
+            self.assertEqual(snapshot["latest_checkpoint"]["next_stage_index"], 1)
+            self.assertTrue(snapshot["latest_checkpoint"]["matches_latest_plan"])
+            self.assertEqual(snapshot["latest_plan"]["status"], "已暂停")
 
     def test_progress_snapshot_prefers_runtime_progress(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

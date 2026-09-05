@@ -325,6 +325,17 @@ PAGE = """<!DOCTYPE html>
     color: #f3d88a;
     box-shadow: 0 0 16px rgba(233,196,106,0.16);
   }
+  .quickbar .resume-switch {
+    border-color: rgba(116,224,131,0.78);
+    color: #a7f0b0;
+    box-shadow: 0 0 16px rgba(116,224,131,0.14);
+  }
+  .quickbar .resume-switch:disabled {
+    border-color: #242228;
+    color: #4d4a52;
+    box-shadow: none;
+    cursor: default;
+  }
   .quickbar .force-switch {
     border-color: rgba(255,123,114,0.95);
     color: #ffb3ad;
@@ -439,6 +450,7 @@ PAGE = """<!DOCTYPE html>
         <button class="collab-switch" id="createPlan" type="button">生成主控方案</button>
         <button class="collab-switch" id="startCollab" type="button">开始协同工作</button>
         <button class="pause-switch" id="pauseWork" type="button">暂停工作</button>
+        <button class="resume-switch" id="resumeWork" type="button" disabled>继续暂停任务</button>
         <button class="force-switch" id="forceStop" type="button">强制停止</button>
         <button data-fill='run-adaptive "实现终端树状进度"'>run-adaptive</button>
         <button data-fill='plans'>plans</button>
@@ -475,6 +487,7 @@ PAGE = """<!DOCTYPE html>
   const createPlan = document.getElementById("createPlan");
   const startCollab = document.getElementById("startCollab");
   const pauseWork = document.getElementById("pauseWork");
+  const resumeWork = document.getElementById("resumeWork");
   const forceStop = document.getElementById("forceStop");
   const modeHint = document.getElementById("modeHint");
   let latestProgress = null;
@@ -641,12 +654,19 @@ PAGE = """<!DOCTYPE html>
     latestProgress = data;
     const runtime = data.runtime || {};
     const plan = data.latest_plan || {};
+    const checkpoint = data.latest_checkpoint || null;
     const nodes = workflowRelationTree(data.nodes || []);
     const task = runtime.goal || plan.goal || "暂无任务";
     const state = runtime.status || plan.status || "idle";
     setText(progressSummaryInline, `latest task: ${task}  |  state: ${state}`);
-    setText(progressDetail, runtime.detail || "local workflow snapshot loaded");
+    setText(
+      progressDetail,
+      checkpoint
+        ? `checkpoint ready: ${checkpoint.task_id}, next stage ${Number(checkpoint.next_stage_index || 0) + 1}`
+        : runtime.detail || "local workflow snapshot loaded"
+    );
     setText(runStatus, state === "已执行" ? "done" : state);
+    if (resumeWork) resumeWork.disabled = !checkpoint;
 
     agentTreeInline.innerHTML = "";
     if (!nodes.length) {
@@ -774,6 +794,21 @@ PAGE = """<!DOCTYPE html>
     setText(modeHint, "默认：先和第一个 AI 对话澄清需求；点“生成主控方案”后只生成方案；点“开始协同工作”才执行后续 Agent；“暂停工作”为软暂停，“强制停止”会立即中断后台进程。");
   }
 
+  async function resumePausedWork() {
+    await refreshProgress();
+    const checkpoint = latestProgress && latestProgress.latest_checkpoint ? latestProgress.latest_checkpoint : {};
+    const taskId = checkpoint.task_id || "";
+    if (!taskId) {
+      append("当前没有可继续的暂停断点。", "err");
+      return;
+    }
+    if (resumeWork) resumeWork.disabled = true;
+    setText(modeHint, `正在从暂停断点继续执行 ${taskId}`);
+    await run(`approve ${taskId}`);
+    if (resumeWork) resumeWork.disabled = false;
+    setText(modeHint, "默认：先和第一个 AI 对话澄清需求；点“生成主控方案”后只生成方案；点“开始协同工作”才执行后续 Agent；“暂停工作”为软暂停，“强制停止”会立即中断后台进程。");
+  }
+
   async function createPlanFromDiscussion() {
     const typed = goalInput.value.trim();
     if (typed && !/^(pending|plans|review|provider|help|confirm|discard|demo|start|run|run-adaptive|approve)\\b/.test(typed)) {
@@ -860,6 +895,10 @@ PAGE = """<!DOCTYPE html>
 
   pauseWork.addEventListener("click", () => {
     pauseCurrentWork();
+  });
+
+  resumeWork.addEventListener("click", () => {
+    resumePausedWork();
   });
 
   forceStop.addEventListener("click", () => {

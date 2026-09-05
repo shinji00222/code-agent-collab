@@ -13,7 +13,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .control import clear_pause_request, request_pause
+from .control import CHECKPOINT_SUFFIX, clear_pause_request, control_dir, request_pause
 from .providers import ProviderConfigurationError, create_provider
 from .progress import read_progress
 from .webui_page import PAGE as TERMINAL_PAGE
@@ -1416,6 +1416,54 @@ def _plan_snapshot(plan_path: Path | None, workflow_path: Path | None) -> tuple[
     return plan, nodes
 
 
+def _checkpoint_snapshot(project_root: Path, plan_path: Path | None) -> dict | None:
+    folder = control_dir(project_root)
+    if not folder.exists():
+        return None
+    if plan_path is not None:
+        try:
+            plan_data = json.loads(plan_path.read_text(encoding="utf-8"))
+            task_id = str(plan_data["task_id"])
+            candidates = [folder / f"{task_id}{CHECKPOINT_SUFFIX}"]
+        except (OSError, KeyError, json.JSONDecodeError):
+            candidates = []
+    else:
+        candidates = []
+    candidates.extend(
+        sorted(
+            folder.glob(f"*{CHECKPOINT_SUFFIX}"),
+            key=lambda item: item.stat().st_mtime,
+            reverse=True,
+        )
+    )
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        task_id = str(data.get("task_id", ""))
+        if not task_id:
+            continue
+        matches_latest_plan = False
+        if plan_path is not None:
+            try:
+                plan_data = json.loads(plan_path.read_text(encoding="utf-8"))
+                matches_latest_plan = str(plan_data.get("task_id", "")) == task_id
+            except (OSError, json.JSONDecodeError):
+                matches_latest_plan = False
+        return {
+            "task_id": task_id,
+            "next_stage_index": int(data.get("next_stage_index", 0)),
+            "done_roles": [str(item) for item in data.get("done_roles", [])],
+            "updated_at": str(data.get("updated_at", "")),
+            "path": str(path),
+            "matches_latest_plan": matches_latest_plan,
+        }
+    return None
+
+
 def _workflow_snapshot(workflow_path: Path | None) -> tuple[dict | None, list[dict]]:
     if workflow_path is None:
         return None, []
@@ -1436,6 +1484,7 @@ def build_progress_snapshot(project_root: Path = PROJECT_ROOT) -> dict:
     """构建 Web UI 使用的只读进度快照。"""
     runtime_progress = read_progress(project_root)
     plan_path = _latest_path(project_root / "logs" / "plans", "*.json")
+    latest_checkpoint = _checkpoint_snapshot(project_root, plan_path)
     workflow_path = _latest_path(project_root / "logs" / "workflows", "*.md")
     matching_workflow_path = None
     if plan_path is not None:
@@ -1444,6 +1493,12 @@ def build_progress_snapshot(project_root: Path = PROJECT_ROOT) -> dict:
         matching_workflow_path = candidate if candidate.exists() else None
     latest_workflow, workflow_nodes = _workflow_snapshot(matching_workflow_path or workflow_path)
     latest_plan, plan_nodes = _plan_snapshot(plan_path, matching_workflow_path)
+    if (
+        latest_plan is not None
+        and latest_checkpoint is not None
+        and latest_checkpoint.get("matches_latest_plan")
+    ):
+        latest_plan["status"] = "已暂停"
     if latest_plan is not None:
         latest_workflow, _ = _workflow_snapshot(matching_workflow_path)
     nodes = plan_nodes or workflow_nodes
@@ -1456,12 +1511,14 @@ def build_progress_snapshot(project_root: Path = PROJECT_ROOT) -> dict:
         return {
             "latest_plan": latest_plan,
             "latest_workflow": latest_workflow,
+            "latest_checkpoint": latest_checkpoint,
             "runtime": runtime_progress,
             "nodes": runtime_progress.get("nodes", []),
         }
     return {
         "latest_plan": latest_plan,
         "latest_workflow": latest_workflow,
+        "latest_checkpoint": latest_checkpoint,
         "runtime": None,
         "nodes": nodes,
     }
