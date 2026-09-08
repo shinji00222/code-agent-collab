@@ -148,8 +148,16 @@ class DiscussionTests(unittest.TestCase):
         with patch.dict(os.environ, {"AGENT_WORKBENCH_PROVIDER": "mock"}, clear=False):
             result = discuss_with_orchestrator("你能回答我的问题吗？")
 
-        self.assertIn("先回答问题", result["output"])
+        self.assertIn("按问题本身回答", result["output"])
         self.assertIn("生成主控方案", result["output"])
+
+    def test_discussion_answers_current_model_question(self) -> None:
+        with patch.dict(os.environ, {"AGENT_WORKBENCH_PROVIDER": "mock"}, clear=False):
+            result = discuss_with_orchestrator("你是什么模型")
+
+        self.assertIn("mock Provider", result["output"])
+        self.assertIn("mock-model", result["output"])
+        self.assertIn("不联网", result["output"])
 
     def test_webui_project_root_points_to_repository_root(self) -> None:
         self.assertEqual(SRC_DIR, PROJECT_ROOT / "src")

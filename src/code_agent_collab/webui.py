@@ -101,10 +101,16 @@ def _looks_like_question(message: str) -> bool:
 
 
 def _mock_discussion_reply(message: str, user_count: int) -> str:
+    if re.search(r"(模型|provider|Provider|api|API|key|Key|密钥|联网|本地)", message):
+        return (
+            "当前是 mock Provider，模型名是 mock-model。"
+            "这是本地模拟回复，不联网，也不会消耗 API Key。"
+            "如果要接真实模型，可以先用 provider 命令查看状态，再配置 deepseek、openai 或 openai-compatible。"
+        )
     if _looks_like_question(message):
         return (
-            "可以。你在这里直接问问题时，我会先回答问题；如果这个问题和要做的功能有关，"
-            "我再顺手帮你把需求约束整理下来。等你觉得聊清楚了，再点“生成主控方案”。"
+            "可以。你直接问问题时，我会先按问题本身回答；如果信息不够，我再告诉你缺什么，"
+            "而不是只反问需求。等你觉得聊清楚了，再点“生成主控方案”。"
         )
     if user_count <= 1:
         return (
@@ -141,7 +147,8 @@ def discuss_with_orchestrator(message: str) -> dict[str, str]:
                 (
                     "你是 OrchestratorAgent 的前置需求讨论员。"
                     "你的任务是和用户对话澄清需求，不要写代码，不要批准执行，不要调用其他 Agent。"
-                    "用户问问题时必须先正面回答，不要只追问需求；回答后如有必要，再继续澄清。"
+                    "用户问问题时必须先正面回答，不要只追问需求；知道答案就给具体答案，"
+                    "不知道就明确说不确定并说明还需要什么信息。回答后如有必要，再继续澄清。"
                     "如果信息不足，最多问 3 个关键问题；如果信息足够，先总结目标、约束和验收标准，"
                     "然后提示用户可以点击“生成主控方案”。"
                 ),
