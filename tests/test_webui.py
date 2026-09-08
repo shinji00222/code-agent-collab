@@ -144,6 +144,13 @@ class DiscussionTests(unittest.TestCase):
         self.assertIn("讨论补充", goal)
         self.assertIn("保留终端页面，只改输入对话", goal)
 
+    def test_discussion_answers_user_questions(self) -> None:
+        with patch.dict(os.environ, {"AGENT_WORKBENCH_PROVIDER": "mock"}, clear=False):
+            result = discuss_with_orchestrator("你能回答我的问题吗？")
+
+        self.assertIn("先回答问题", result["output"])
+        self.assertIn("生成主控方案", result["output"])
+
     def test_webui_project_root_points_to_repository_root(self) -> None:
         self.assertEqual(SRC_DIR, PROJECT_ROOT / "src")
         self.assertTrue((PROJECT_ROOT / "pyproject.toml").exists())

@@ -95,7 +95,17 @@ def build_discussion_goal() -> str:
     )
 
 
-def _mock_discussion_reply(user_count: int) -> str:
+def _looks_like_question(message: str) -> bool:
+    question_markers = ("?", "？", "怎么", "为什么", "啥", "什么", "能不能", "可以吗", "是不是", "如何")
+    return any(marker in message for marker in question_markers)
+
+
+def _mock_discussion_reply(message: str, user_count: int) -> str:
+    if _looks_like_question(message):
+        return (
+            "可以。你在这里直接问问题时，我会先回答问题；如果这个问题和要做的功能有关，"
+            "我再顺手帮你把需求约束整理下来。等你觉得聊清楚了，再点“生成主控方案”。"
+        )
     if user_count <= 1:
         return (
             "我先确认几个关键点，再生成方案：\n"
@@ -121,7 +131,7 @@ def discuss_with_orchestrator(message: str) -> dict[str, str]:
 
     provider = create_provider()
     if provider.name == "mock":
-        reply = _mock_discussion_reply(user_count)
+        reply = _mock_discussion_reply(cleaned, user_count)
     else:
         transcript = "\n".join(
             f"{item['role']}: {item['content']}" for item in history
@@ -131,6 +141,7 @@ def discuss_with_orchestrator(message: str) -> dict[str, str]:
                 (
                     "你是 OrchestratorAgent 的前置需求讨论员。"
                     "你的任务是和用户对话澄清需求，不要写代码，不要批准执行，不要调用其他 Agent。"
+                    "用户问问题时必须先正面回答，不要只追问需求；回答后如有必要，再继续澄清。"
                     "如果信息不足，最多问 3 个关键问题；如果信息足够，先总结目标、约束和验收标准，"
                     "然后提示用户可以点击“生成主控方案”。"
                 ),
