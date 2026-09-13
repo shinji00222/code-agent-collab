@@ -50,6 +50,10 @@ class WorkerStageFailed(RuntimeError):
         self.succeeded_roles = succeeded_roles
 
 
+class WorkerContractConflict(RuntimeError):
+    """同一阶段 worker 的职责边界有重叠，不能安全并行。"""
+
+
 @dataclass(frozen=True)
 class AdaptivePlanResult:
     """主控产出的执行方案（等待人工审批）。"""
@@ -90,7 +94,7 @@ def build_worker(spec: WorkerSpec, provider: AIProvider):
     if spec.role == "KnowledgeAgent":
         return KnowledgeAgent()
     if spec.role == "CoderAgent":
-        return CoderAgent(provider=provider, worker_label=spec.label)
+        return CoderAgent(provider=provider, worker_label=spec.label, owned_paths=spec.owned_paths)
     if spec.role == "ReviewerAgent":
         return ReviewerAgent(provider=provider)
     raise ValueError(f"未知 worker 角色：{spec.role}")
@@ -200,6 +204,7 @@ def _run_workers(
     *,
     stage_index: int,
 ) -> list[AgentResult]:
+    _ensure_stage_contracts_do_not_overlap(specs)
     ordered: list[AgentResult | None] = [None] * len(workers)
     failures: list[str] = []
     failed_roles: set[str] = set()
@@ -254,6 +259,7 @@ def _rerun_coders(
     revision: int,
     stage_index: int,
 ) -> list[AgentResult]:
+    _ensure_stage_contracts_do_not_overlap(coder_specs)
     coders = [build_worker(spec, provider) for spec in coder_specs]
     ordered: list[AgentResult | None] = [None] * len(coders)
     failures: list[str] = []
@@ -305,7 +311,40 @@ def _rerun_coders(
 
 def _stage_item(spec: WorkerSpec, stage_index: int) -> dict:
     label = spec.role if not spec.label else f"{spec.role}({spec.label})"
-    return {"role": label, "label": label, "detail": f"阶段 {stage_index}"}
+    detail = f"阶段 {stage_index}"
+    if spec.owned_paths:
+        detail = f"{detail} · 负责 {', '.join(spec.owned_paths)}"
+    return {"role": label, "label": label, "detail": detail}
+
+
+def _ensure_stage_contracts_do_not_overlap(specs: tuple[WorkerSpec, ...]) -> None:
+    owned_specs = [spec for spec in specs if spec.owned_paths]
+    for index, left in enumerate(owned_specs):
+        for right in owned_specs[index + 1 :]:
+            overlap = _overlapping_paths(left.owned_paths, right.owned_paths)
+            if overlap:
+                raise WorkerContractConflict(
+                    f"{_contract_name(left)} 与 {_contract_name(right)} 职责边界重叠：{', '.join(overlap)}"
+                )
+
+
+def _overlapping_paths(left_paths: tuple[str, ...], right_paths: tuple[str, ...]) -> list[str]:
+    overlaps = []
+    for left in left_paths:
+        left_norm = _normalize_contract_path(left)
+        for right in right_paths:
+            right_norm = _normalize_contract_path(right)
+            if left_norm == right_norm or left_norm.startswith(right_norm + "/") or right_norm.startswith(left_norm + "/"):
+                overlaps.append(left if left_norm == right_norm or right_norm.startswith(left_norm + "/") else right)
+    return sorted(set(overlaps))
+
+
+def _normalize_contract_path(value: str) -> str:
+    return value.replace("\\", "/").strip().strip("/").lower()
+
+
+def _contract_name(spec: WorkerSpec) -> str:
+    return spec.role if not spec.label else f"{spec.role}({spec.label})"
 
 
 def _adaptive_stages(plan: OrchestrationPlan | None = None) -> list[list[dict]]:
@@ -400,13 +439,13 @@ def _plan_to_json(plan: OrchestrationPlan, task_id: str, goal: str, summary: str
         "complexity": plan.complexity.value,
         "label": plan.label,
         "worker_count": plan.worker_count,
-        "stages": [[[spec.role, spec.label] for spec in stage] for stage in plan.stages],
+        "stages": [[_spec_to_json(spec) for spec in stage] for stage in plan.stages],
     }
 
 
 def _plan_from_json(data: dict) -> OrchestrationPlan:
     stages = tuple(
-        tuple(WorkerSpec(role=item[0], label=item[1]) for item in stage)
+        tuple(_spec_from_plan_item(item) for item in stage)
         for stage in data["stages"]
     )
     return OrchestrationPlan(
@@ -417,14 +456,35 @@ def _plan_from_json(data: dict) -> OrchestrationPlan:
 
 
 def _specs_to_json(specs: tuple[WorkerSpec, ...]) -> list[dict]:
-    return [{"role": spec.role, "label": spec.label} for spec in specs]
+    return [_spec_to_json(spec) for spec in specs]
 
 
 def _specs_from_json(items: list[dict]) -> tuple[WorkerSpec, ...]:
     return tuple(
-        WorkerSpec(role=str(item.get("role", "")), label=str(item.get("label", "")))
+        _spec_from_plan_item(item)
         for item in items
-        if item.get("role")
+        if (isinstance(item, dict) and item.get("role")) or (isinstance(item, list) and item)
+    )
+
+
+def _spec_to_json(spec: WorkerSpec) -> dict:
+    return {
+        "role": spec.role,
+        "label": spec.label,
+        "owned_paths": list(spec.owned_paths),
+    }
+
+
+def _spec_from_plan_item(item) -> WorkerSpec:
+    if isinstance(item, dict):
+        return WorkerSpec(
+            role=str(item.get("role", "")),
+            label=str(item.get("label") or ""),
+            owned_paths=tuple(str(path) for path in item.get("owned_paths", []) if path),
+        )
+    return WorkerSpec(
+        role=str(item[0]),
+        label=str(item[1] or "") if len(item) > 1 else "",
     )
 
 
@@ -487,6 +547,9 @@ def _render_plan(plan: OrchestrationPlan) -> str:
             spec.role if not spec.label else f"{spec.role}({spec.label})" for spec in stage
         )
         lines.append(f"- 阶段{index}：{names}")
+        for spec in stage:
+            if spec.owned_paths:
+                lines.append(f"  - {spec.role}({spec.label}) 负责：{', '.join(spec.owned_paths)}")
     return "\n".join(lines)
 
 

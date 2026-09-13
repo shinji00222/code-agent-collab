@@ -44,6 +44,14 @@ class ComplexityTests(unittest.TestCase):
             roles = [spec.role for stage in build_plan(level).stages for spec in stage]
             self.assertIn("ReviewerAgent", roles)
 
+    def test_complex_plan_assigns_non_overlapping_coder_paths(self) -> None:
+        plan = build_plan(ComplexityLevel.COMPLEX)
+        coder_specs = [spec for stage in plan.stages for spec in stage if spec.role == "CoderAgent"]
+
+        self.assertEqual([spec.label for spec in coder_specs], ["实现", "测试"])
+        self.assertEqual(coder_specs[0].owned_paths, ("src/",))
+        self.assertEqual(coder_specs[1].owned_paths, ("tests/",))
+
 
 class OrchestratorAgentTests(unittest.TestCase):
     def test_agent_emits_plan(self) -> None:

@@ -201,6 +201,36 @@ class ProgressSnapshotTests(unittest.TestCase):
             self.assertEqual(len(branch_nodes), 1)
             self.assertEqual(len(branch_nodes[0]["children"]), 2)
 
+    def test_progress_snapshot_reads_owned_paths_plan_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plans_dir = root / "logs" / "plans"
+            context_dir = root / "logs" / "context-packs"
+            plans_dir.mkdir(parents=True)
+            context_dir.mkdir(parents=True)
+            task_id = "20260913-120000-分工"
+            (context_dir / f"{task_id}.md").write_text("# context", encoding="utf-8")
+            (plans_dir / f"{task_id}.json").write_text(
+                """{
+  "task_id": "20260913-120000-分工",
+  "goal": "分工隔离",
+  "orchestrator_summary": "测试方案",
+  "complexity": "complex",
+  "label": "检索 + 实现/测试分工 + 评审（4 阶段）",
+  "worker_count": 4,
+  "stages": [[{"role": "KnowledgeAgent", "label": "", "owned_paths": []}], [{"role": "CoderAgent", "label": "实现", "owned_paths": ["src/"]}, {"role": "CoderAgent", "label": "测试", "owned_paths": ["tests/"]}], [{"role": "ReviewerAgent", "label": "", "owned_paths": []}]]
+}
+""",
+                encoding="utf-8",
+            )
+
+            snapshot = build_progress_snapshot(root)
+
+            branch_nodes = [node for node in snapshot["nodes"] if node["kind"] == "branch"]
+            self.assertEqual(len(branch_nodes), 1)
+            self.assertEqual(branch_nodes[0]["children"][0]["label"], "CoderAgent(实现)")
+            self.assertIn("负责 src/", branch_nodes[0]["children"][0]["detail"])
+
     def test_progress_snapshot_exposes_pause_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

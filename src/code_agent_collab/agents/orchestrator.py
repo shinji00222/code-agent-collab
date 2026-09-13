@@ -15,10 +15,14 @@ class ComplexityLevel(str, Enum):
 
 @dataclass(frozen=True)
 class WorkerSpec:
-    """一个 worker 的规格。label 用于区分多个同类 worker（如"模块A"/"模块B"）。"""
+    """一个 worker 的规格。
+
+    label 用于区分多个同类 worker；owned_paths 是这个 worker 的默认职责边界。
+    """
 
     role: str
     label: str = ""
+    owned_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -52,10 +56,13 @@ TEMPLATES: dict[ComplexityLevel, OrchestrationPlan] = {
     ),
     ComplexityLevel.COMPLEX: OrchestrationPlan(
         complexity=ComplexityLevel.COMPLEX,
-        label="检索 + 双编码并行 + 评审（4 阶段）",
+        label="检索 + 实现/测试分工 + 评审（4 阶段）",
         stages=(
             (WorkerSpec("KnowledgeAgent"),),
-            (WorkerSpec("CoderAgent", "模块A"), WorkerSpec("CoderAgent", "模块B")),
+            (
+                WorkerSpec("CoderAgent", "实现", ("src/",)),
+                WorkerSpec("CoderAgent", "测试", ("tests/",)),
+            ),
             (WorkerSpec("ReviewerAgent"),),
         ),
     ),
@@ -146,7 +153,7 @@ class OrchestratorAgent(BaseAgent):
         plan = build_plan(complexity)
         self.last_plan = plan
         stage_desc = " → ".join(
-            "+".join(spec.role if not spec.label else f"{spec.role}({spec.label})" for spec in stage)
+            "+".join(_describe_spec(spec) for spec in stage)
             for stage in plan.stages
         )
         return AgentResult(
@@ -166,3 +173,10 @@ class OrchestratorAgent(BaseAgent):
             risks=["模板为预设三档，不按任务自由拆分；复杂度判定可能不准确。"],
             next_steps=["按模板阶段执行 workers；阶段间串行，阶段内可并行。"],
         )
+
+
+def _describe_spec(spec: WorkerSpec) -> str:
+    label = spec.role if not spec.label else f"{spec.role}({spec.label})"
+    if not spec.owned_paths:
+        return label
+    return f"{label}[{', '.join(spec.owned_paths)}]"

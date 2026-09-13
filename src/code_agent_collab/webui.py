@@ -1415,16 +1415,25 @@ def _plan_snapshot(plan_path: Path | None, workflow_path: Path | None) -> tuple[
     for stage_index, stage in enumerate(data.get("stages", []), start=1):
         children = []
         for item in stage:
-            role = item[0]
-            label = item[1]
+            if isinstance(item, dict):
+                role = item.get("role", "")
+                label = item.get("label", "")
+                owned_paths = item.get("owned_paths", [])
+            else:
+                role = item[0]
+                label = item[1]
+                owned_paths = []
             done = _consume_role(counts, role)
             node_label = role if not label else f"{role}({label})"
+            detail = f"阶段 {stage_index}"
+            if owned_paths:
+                detail = f"{detail} · 负责 {', '.join(owned_paths)}"
             children.append(
                 {
                     "kind": "node",
                     "label": node_label,
                     "status": "done" if done else "idle",
-                    "detail": f"阶段 {stage_index}",
+                    "detail": detail,
                 }
             )
         if len(children) == 1:

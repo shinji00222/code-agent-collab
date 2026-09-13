@@ -9,11 +9,17 @@ class CoderAgent(BaseAgent):
     role = "CoderAgent"
     permission = PermissionLevel.DRAFT_WRITE
 
-    def __init__(self, provider: AIProvider | None = None, worker_label: str = "") -> None:
+    def __init__(
+        self,
+        provider: AIProvider | None = None,
+        worker_label: str = "",
+        owned_paths: tuple[str, ...] = (),
+    ) -> None:
         self.provider = provider or create_provider()
-        # worker_label 用于区分多个并行的编码 worker（如"模块A"/"模块B"）；
+        # worker_label 用于区分多个并行的编码 worker（如"实现"/"测试"）；
         # 为空时保持原有单一草稿文件名，不影响现有调用方。
         self.worker_label = worker_label
+        self.owned_paths = owned_paths
 
     def run(self, context: AgentContext, previous_results: list[AgentResult]) -> AgentResult:
         return self.run_with_feedback(context, previous_results)
@@ -26,7 +32,16 @@ class CoderAgent(BaseAgent):
         revision: int = 0,
     ) -> AgentResult:
         feedback = reviewer_feedback or []
-        duty = f"你负责的部分：{self.worker_label}。" if self.worker_label else ""
+        duty_parts = []
+        if self.worker_label:
+            duty_parts.append(f"你负责的部分：{self.worker_label}。")
+        if self.owned_paths:
+            duty_parts.append(
+                "你只能围绕这些职责路径生成建议，不要抢其他 worker 的范围："
+                + "、".join(self.owned_paths)
+                + "。"
+            )
+        duty = "".join(duty_parts)
         feedback_text = ""
         if feedback:
             feedback_text = "\n".join(
@@ -76,6 +91,7 @@ class CoderAgent(BaseAgent):
                 f"- 任务ID：{context.task_id}",
                 f"- Provider：{self.provider.name}",
                 *([f"- 负责部分：{self.worker_label}"] if self.worker_label else []),
+                *([f"- 负责路径：{', '.join(self.owned_paths)}"] if self.owned_paths else []),
                 *([f"- 重写轮次：{revision}"] if revision else []),
                 "- 状态：待人工确认，不得直接合并到正式源码。",
                 "",
@@ -112,6 +128,7 @@ class CoderAgent(BaseAgent):
                 f"已接收上游 Agent 数量：{len(previous_results)}",
                 f"草稿路径：{output_path}",
                 f"负责部分：{self.worker_label or '整体'}",
+                *([f"负责路径：{', '.join(self.owned_paths)}"] if self.owned_paths else []),
                 *([f"Reviewer 反馈数量：{len(feedback)}"] if feedback else []),
             ],
             outputs=["生成代码草稿", "生成测试建议", "保留正式文件确认闸门"],

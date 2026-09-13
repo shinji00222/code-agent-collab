@@ -14,7 +14,10 @@ from code_agent_collab.control import (
 )
 from code_agent_collab.agents.orchestrator import WorkerSpec
 from code_agent_collab.orchestration import (
+    WorkerContractConflict,
     WorkerStageFailed,
+    _plan_from_json,
+    _plan_to_json,
     _run_workers,
     create_adaptive_plan,
     execute_adaptive_plan,
@@ -308,6 +311,55 @@ class WorkerRunLedgerTests(unittest.TestCase):
             records = load_worker_runs(root, "task-1")
             self.assertEqual(records["stage2-CoderAgent-模块A"].status, "skipped")
             self.assertEqual(records["stage2-CoderAgent-模块B"].status, "success")
+
+    def test_parallel_workers_with_overlapping_owned_paths_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            context_pack = root / "logs" / "context-packs" / "task-1.md"
+            context_pack.parent.mkdir(parents=True)
+            context_pack.write_text("context", encoding="utf-8")
+            context = AgentContext(
+                project_root=root,
+                task_goal="冲突测试",
+                task_id="task-1",
+                context_pack_path=context_pack,
+            )
+            specs = (
+                WorkerSpec("CoderAgent", "实现A", ("src/",)),
+                WorkerSpec("CoderAgent", "实现B", ("src/code_agent_collab/",)),
+            )
+
+            with self.assertRaises(WorkerContractConflict):
+                _run_workers(
+                    [StaticAgent("CoderAgent", "实现A"), StaticAgent("CoderAgent", "实现B")],
+                    context,
+                    [],
+                    specs,
+                    stage_index=2,
+                )
+
+    def test_plan_json_preserves_owned_paths_and_reads_legacy_arrays(self) -> None:
+        from code_agent_collab.agents import ComplexityLevel, OrchestrationPlan
+
+        plan = OrchestrationPlan(
+            complexity=ComplexityLevel.COMPLEX,
+            label="测试",
+            stages=((WorkerSpec("CoderAgent", "实现", ("src/",)),),),
+        )
+
+        payload = _plan_to_json(plan, "task-1", "目标", "summary")
+        restored = _plan_from_json(payload)
+        legacy = _plan_from_json(
+            {
+                "complexity": "complex",
+                "label": "legacy",
+                "stages": [[["CoderAgent", "A"]]],
+            }
+        )
+
+        self.assertEqual(restored.stages[0][0].owned_paths, ("src/",))
+        self.assertEqual(legacy.stages[0][0].label, "A")
+        self.assertEqual(legacy.stages[0][0].owned_paths, ())
 
 
 if __name__ == "__main__":

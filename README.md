@@ -9,11 +9,11 @@
 
 ## 当前版本
 
-当前版本：`v0.12.1`（开发版）
+当前版本：`v0.12.2`（开发版）
 
 阶段定位：主知识库只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + Web 终端 + 草稿应用实验能力。
 
-当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿；ReviewerAgent 在 CoderAgent 之后对代码草稿做规则版评审（检查草稿是否存在、AI 草稿正文是否太空、敏感信息、越权），不通过时最多打回 CoderAgent 重写一次，再不通过则停下交给人工处理；OrchestratorAgent 按任务复杂度从三档预设模板选择执行方案（`run-adaptive` 命令，阶段内并行），简单/中等/复杂方案都会在 CoderAgent 后进入 ReviewerAgent；阶段内 worker 会写入 `logs/runs/<任务ID>/workers.json` 状态账本，记录每个子 Agent 的执行状态、输出、错误和尝试次数，失败重跑时会跳过同输入下已成功的 worker；运行进度会同时写兼容用的 `logs/progress/current.json`、任务专属的 `logs/progress/<任务ID>.json` 和最近任务指针 `logs/progress/latest.json`；`plans` 可查看已保存方案是待批准还是已执行；Web 终端改为纯黑底终端页，实时轮询 `/api/progress`，用紫色显示已走过和当前节点，用黑灰色显示未到达节点，并显示 Orchestrator、CoderAgent、ReviewerAgent、Fix Loop、Done 的流程进度。Web 终端默认是单 AI 需求讨论模式：直接输入普通内容时先由 OrchestratorAgent 前置讨论员追问和澄清；点击“生成主控方案”后才把讨论内容整理成 `run-adaptive` 方案；点击“开始协同工作”后才批准最近方案并执行 KnowledgeAgent、CoderAgent、ReviewerAgent 等后续 Agent；执行中可点“暂停工作”请求阶段边界暂停并保存断点；页面检测到断点后会启用“继续暂停任务”，继续执行同一任务的下一阶段；经多重确认点“强制停止”可及时中断后台进程，且不会删除 API key，停用或更换 key 仍通过配置脚本处理。KnowledgeAgent 会从主知识库只读检索与任务相关的文档，生成知识补充文件，供后续 Agent 使用；候选知识经 AI 审查后只标记"待人工确认"，由用户 `confirm` 确认后才写入主知识库，命中敏感信息的转人工处理。`apply-draft` 处于实验阶段，可预览 Coder 草稿 diff，并在显式 `--apply` 时应用到 `src/`、`tests/`，自动测试、失败回滚、通过后本地提交。
+当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent 和 CoderAgent 可以调用真实模型生成计划与代码草稿；ReviewerAgent 在 CoderAgent 之后对代码草稿做规则版评审（检查草稿是否存在、AI 草稿正文是否太空、敏感信息、越权），不通过时最多打回 CoderAgent 重写一次，再不通过则停下交给人工处理；OrchestratorAgent 按任务复杂度从三档预设模板选择执行方案（`run-adaptive` 命令，阶段内并行），简单/中等/复杂方案都会在 CoderAgent 后进入 ReviewerAgent；复杂任务默认把并行 Coder 拆成“实现”和“测试”两类职责，并在 `WorkerSpec.owned_paths` 中记录各自负责路径，执行前会拦截同阶段职责路径重叠的 worker，避免分工模糊时硬并行；阶段内 worker 会写入 `logs/runs/<任务ID>/workers.json` 状态账本，记录每个子 Agent 的执行状态、输出、错误和尝试次数，失败重跑时会跳过同输入下已成功的 worker；运行进度会同时写兼容用的 `logs/progress/current.json`、任务专属的 `logs/progress/<任务ID>.json` 和最近任务指针 `logs/progress/latest.json`；`plans` 可查看已保存方案是待批准还是已执行；Web 终端改为纯黑底终端页，实时轮询 `/api/progress`，用紫色显示已走过和当前节点，用黑灰色显示未到达节点，并显示 Orchestrator、CoderAgent、ReviewerAgent、Fix Loop、Done 的流程进度。Web 终端默认是单 AI 需求讨论模式：直接输入普通内容时先由 OrchestratorAgent 前置讨论员追问和澄清；点击“生成主控方案”后才把讨论内容整理成 `run-adaptive` 方案；点击“开始协同工作”后才批准最近方案并执行 KnowledgeAgent、CoderAgent、ReviewerAgent 等后续 Agent；执行中可点“暂停工作”请求阶段边界暂停并保存断点；页面检测到断点后会启用“继续暂停任务”，继续执行同一任务的下一阶段；经多重确认点“强制停止”可及时中断后台进程，且不会删除 API key，停用或更换 key 仍通过配置脚本处理。KnowledgeAgent 会从主知识库只读检索与任务相关的文档，生成知识补充文件，供后续 Agent 使用；候选知识经 AI 审查后只标记"待人工确认"，由用户 `confirm` 确认后才写入主知识库，命中敏感信息的转人工处理。`apply-draft` 处于实验阶段，可预览 Coder 草稿 diff，并在显式 `--apply` 时应用到 `src/`、`tests/`，自动测试、失败回滚、通过后本地提交。
 
 ## 核心原则
 
@@ -74,7 +74,7 @@ python -m code_agent_collab.webui
 - `discard`：废弃候选记录，不写入主知识库。
 - `demo`：一键跑通基础闭环。
 - `run`：执行规则版多 Agent 工作流。
-- `run-adaptive`：生成半动态自适应方案并等待人工审批（不自动执行）；主控按任务复杂度从三档预设模板选择 worker 方案（SIMPLE=2 / MEDIUM=3 / COMPLEX=4），阶段内并行；所有方案都会在 CoderAgent 后进入 ReviewerAgent。
+- `run-adaptive`：生成半动态自适应方案并等待人工审批（不自动执行）；主控按任务复杂度从三档预设模板选择 worker 方案（SIMPLE=2 / MEDIUM=3 / COMPLEX=4），阶段内并行；复杂任务的并行 Coder 默认带 `owned_paths` 职责边界，路径重叠会被拦截；所有方案都会在 CoderAgent 后进入 ReviewerAgent。
 - `plans`：列出已保存的主控方案，显示任务、复杂度、worker 数量和状态（待批准/已执行）。
 - `approve`：人工批准 `run-adaptive` 生成的方案，批准后执行 workers（阶段间串行、阶段内并行），产出工作流日志与候选复盘。
 - `apply-draft`：解析 Coder 草稿并预览 diff（dry-run，不写文件）；加 `--apply` 应用改动 → 自动跑测试 → 测试通过自动本地 commit（失败自动回滚）。只允许改 `src/`、`tests/` 下文本文件。
@@ -142,7 +142,7 @@ $env:AGENT_WORKBENCH_API_KEY_ENV="你的密钥环境变量名"
 - `CoordinatorAgent`：拆分任务（默认流水线）。
 - `KnowledgeAgent`：从主知识库只读检索相关文档，生成知识补充文件。
 - `PlannerAgent`：生成保守执行计划。
-- `CoderAgent`：生成代码草稿，只写入 `dev-vault/projects`，不直接修改正式源码；支持 `worker_label` 以多实例并行写独立草稿；草稿按固定五小节格式输出（修改文件清单/修改原因/建议代码/测试方法/风险），可被 `apply-draft` 解析。
+- `CoderAgent`：生成代码草稿，只写入 `dev-vault/projects`，不直接修改正式源码；支持 `worker_label` 和 `owned_paths` 以多实例并行写独立草稿并声明职责边界；草稿按固定五小节格式输出（修改文件清单/修改原因/建议代码/测试方法/风险），可被 `apply-draft` 解析。
 - `ReviewerAgent`：规则版评审代码草稿（存在性 / AI 草稿正文长度 / 敏感信息 / 越权），支持评审多份草稿；不通过时可触发最多一次重写。
 - `OrchestratorAgent`：半动态主控，按任务复杂度从三档预设模板选择执行方案（`run-adaptive`）。
 - `ValidatorAgent`：检查上下文包和边界。

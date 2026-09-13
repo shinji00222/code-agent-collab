@@ -53,6 +53,8 @@ def input_hash_for(context_path: Path, task_goal: str, spec: WorkerSpec) -> str:
     digest.update(spec.role.encode("utf-8"))
     digest.update(b"\n")
     digest.update(spec.label.encode("utf-8"))
+    digest.update(b"\n")
+    digest.update("\n".join(spec.owned_paths).encode("utf-8"))
     try:
         digest.update(context_path.read_bytes())
     except OSError:
