@@ -5,19 +5,24 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from code_agent_collab.agents import AgentContext, AgentResult, PermissionLevel
 from code_agent_collab.control import (
     WorkflowPaused,
     clear_pause_request,
     load_checkpoint,
     request_pause,
 )
+from code_agent_collab.agents.orchestrator import WorkerSpec
 from code_agent_collab.orchestration import (
+    WorkerStageFailed,
+    _run_workers,
     create_adaptive_plan,
     execute_adaptive_plan,
     list_adaptive_plans,
     run_adaptive_workflow,
 )
 from code_agent_collab.providers import AIProvider
+from code_agent_collab.worker_runs import load_worker_runs
 
 
 class ShortThenGoodProvider(AIProvider):
@@ -36,6 +41,33 @@ class ShortThenGoodProvider(AIProvider):
         if self.coder_calls <= 2:
             return "太短"
         return "重写后的有效代码草稿。" * 20
+
+
+class StaticAgent:
+    permission = PermissionLevel.DRAFT_WRITE
+
+    def __init__(self, role: str, name: str) -> None:
+        self.role = role
+        self.name = name
+        self.calls = 0
+
+    def run(self, context: AgentContext, previous_results: list[AgentResult]) -> AgentResult:
+        del previous_results
+        self.calls += 1
+        return AgentResult(
+            role=self.role,
+            permission=self.permission,
+            summary=f"{self.name} 完成",
+            evidence=[f"草稿路径：{context.project_root / 'dev-vault' / 'projects' / (self.name + '.md')}"],
+            outputs=[self.name],
+        )
+
+
+class FailingAgent(StaticAgent):
+    def run(self, context: AgentContext, previous_results: list[AgentResult]) -> AgentResult:
+        del context, previous_results
+        self.calls += 1
+        raise RuntimeError(f"{self.name} 失败")
 
 
 def _make_project(tmp: str) -> Path:
@@ -111,9 +143,15 @@ class ApprovalGateTests(unittest.TestCase):
             )._run_workers
             call_count = 0
 
-            def pause_after_first_stage(workers, context, results):
+            def pause_after_first_stage(workers, context, results, specs, *, stage_index):
                 nonlocal call_count
-                stage_results = original_run_workers(workers, context, results)
+                stage_results = original_run_workers(
+                    workers,
+                    context,
+                    results,
+                    specs,
+                    stage_index=stage_index,
+                )
                 call_count += 1
                 if call_count == 1:
                     request_pause(root)
@@ -225,6 +263,51 @@ class AdaptiveWorkflowTests(unittest.TestCase):
                 (root / "dev-vault" / "projects").glob(f"{result.task_id}-coder-draft-*-revision1.md")
             )
             self.assertEqual(len(revision_drafts), 2)
+
+
+class WorkerRunLedgerTests(unittest.TestCase):
+    def test_worker_run_ledger_skips_success_and_retries_failed_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            context_pack = root / "logs" / "context-packs" / "task-1.md"
+            context_pack.parent.mkdir(parents=True)
+            context_pack.write_text("context", encoding="utf-8")
+            context = AgentContext(
+                project_root=root,
+                task_goal="并行测试",
+                task_id="task-1",
+                context_pack_path=context_pack,
+            )
+            specs = (WorkerSpec("CoderAgent", "模块A"), WorkerSpec("CoderAgent", "模块B"))
+            worker_a = StaticAgent("CoderAgent", "模块A")
+            worker_b = FailingAgent("CoderAgent", "模块B")
+
+            with self.assertRaises(WorkerStageFailed) as raised:
+                _run_workers([worker_a, worker_b], context, [], specs, stage_index=2)
+
+            self.assertEqual(worker_a.calls, 1)
+            self.assertEqual(worker_b.calls, 1)
+            self.assertEqual(len(raised.exception.partial_results), 1)
+            records = load_worker_runs(root, "task-1")
+            self.assertEqual(records["stage2-CoderAgent-模块A"].status, "success")
+            self.assertEqual(records["stage2-CoderAgent-模块B"].status, "failed")
+
+            worker_a_retry = FailingAgent("CoderAgent", "模块A")
+            worker_b_retry = StaticAgent("CoderAgent", "模块B")
+            results = _run_workers(
+                [worker_a_retry, worker_b_retry],
+                context,
+                raised.exception.partial_results,
+                specs,
+                stage_index=2,
+            )
+
+            self.assertEqual(worker_a_retry.calls, 0)
+            self.assertEqual(worker_b_retry.calls, 1)
+            self.assertEqual([result.summary for result in results], ["模块A 完成", "模块B 完成"])
+            records = load_worker_runs(root, "task-1")
+            self.assertEqual(records["stage2-CoderAgent-模块A"].status, "skipped")
+            self.assertEqual(records["stage2-CoderAgent-模块B"].status, "success")
 
 
 if __name__ == "__main__":

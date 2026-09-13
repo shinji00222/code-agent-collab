@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -23,8 +24,30 @@ from .file_utils import ensure_dir, write_text
 from .progress import publish_progress, role_stage, workflow_tree
 from .providers import AIProvider, create_provider
 from .reflection import ReflectionResult, create_reflection
+from .worker_runs import (
+    finish_worker_failed,
+    finish_worker_success,
+    input_hash_for,
+    mark_worker_skipped,
+    should_skip_worker,
+    start_worker_run,
+)
 
 MAX_REVIEW_RETRIES = 1
+
+
+class WorkerStageFailed(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        partial_results: list[AgentResult],
+        failed_roles: set[str],
+        succeeded_roles: set[str],
+    ) -> None:
+        super().__init__(message)
+        self.partial_results = partial_results
+        self.failed_roles = failed_roles
+        self.succeeded_roles = succeeded_roles
 
 
 @dataclass(frozen=True)
@@ -82,11 +105,144 @@ def _reviewer_feedback(worker, result: AgentResult) -> list[str]:
     return list(reasons) if reasons else list(result.outputs)
 
 
-def _run_workers(workers: list, context: AgentContext, results: list[AgentResult]) -> list[AgentResult]:
+def _result_key(result: AgentResult) -> tuple[str, str, tuple[str, ...]]:
+    return result.role, result.summary, tuple(result.evidence)
+
+
+def _extend_unique_results(results: list[AgentResult], new_results: list[AgentResult]) -> None:
+    seen = {_result_key(result) for result in results}
+    for result in new_results:
+        key = _result_key(result)
+        if key in seen:
+            continue
+        results.append(result)
+        seen.add(key)
+
+
+def _run_single_worker(
+    worker,
+    spec: WorkerSpec,
+    context: AgentContext,
+    results: list[AgentResult],
+    *,
+    stage_index: int,
+    revision: int = 0,
+    feedback: list[str] | None = None,
+) -> AgentResult:
+    input_hash = input_hash_for(context.context_pack_path, context.task_goal, spec)
+    if revision or feedback:
+        digest = hashlib.sha256()
+        digest.update(input_hash.encode("utf-8"))
+        digest.update(f"\nrevision={revision}\n".encode("utf-8"))
+        digest.update("\n".join(feedback or []).encode("utf-8"))
+        input_hash = digest.hexdigest()
+    cached = should_skip_worker(
+        context.project_root,
+        task_id=context.task_id,
+        stage_index=stage_index,
+        spec=spec,
+        input_hash=input_hash,
+    )
+    if cached is not None:
+        mark_worker_skipped(
+            context.project_root,
+            task_id=context.task_id,
+            stage_index=stage_index,
+            spec=spec,
+            input_hash=input_hash,
+            result=cached,
+        )
+        return cached
+
+    start_worker_run(
+        context.project_root,
+        task_id=context.task_id,
+        stage_index=stage_index,
+        spec=spec,
+        input_hash=input_hash,
+    )
+    try:
+        if feedback is not None and hasattr(worker, "run_with_feedback"):
+            result = worker.run_with_feedback(
+                context,
+                results,
+                reviewer_feedback=feedback,
+                revision=revision,
+            )
+        else:
+            result = worker.run(context, results)
+    except Exception as exc:  # noqa: BLE001 - worker 失败要先落账，再交给主控处理
+        finish_worker_failed(
+            context.project_root,
+            task_id=context.task_id,
+            stage_index=stage_index,
+            spec=spec,
+            input_hash=input_hash,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        raise
+    finish_worker_success(
+        context.project_root,
+        task_id=context.task_id,
+        stage_index=stage_index,
+        spec=spec,
+        input_hash=input_hash,
+        result=result,
+    )
+    return result
+
+
+def _run_workers(
+    workers: list,
+    context: AgentContext,
+    results: list[AgentResult],
+    specs: tuple[WorkerSpec, ...],
+    *,
+    stage_index: int,
+) -> list[AgentResult]:
+    ordered: list[AgentResult | None] = [None] * len(workers)
+    failures: list[str] = []
+    failed_roles: set[str] = set()
+    succeeded_roles: set[str] = set()
     if len(workers) > 1:
         with ThreadPoolExecutor(max_workers=len(workers)) as pool:
-            return list(pool.map(lambda worker: worker.run(context, results), workers))
-    return [workers[0].run(context, results)]
+            future_map = {
+                pool.submit(
+                    _run_single_worker,
+                    worker,
+                    spec,
+                    context,
+                    results,
+                    stage_index=stage_index,
+                ): (index, spec)
+                for index, (worker, spec) in enumerate(zip(workers, specs, strict=True))
+            }
+            for future in as_completed(future_map):
+                index, spec = future_map[future]
+                try:
+                    ordered[index] = future.result()
+                    succeeded_roles.add(_stage_item(spec, stage_index)["role"])
+                except Exception as exc:  # noqa: BLE001 - 汇总同阶段失败，保留已成功结果
+                    failures.append(f"{spec.role}({spec.label or 'default'}): {exc}")
+                    failed_roles.add(_stage_item(spec, stage_index)["role"])
+    else:
+        try:
+            ordered[0] = _run_single_worker(
+                workers[0],
+                specs[0],
+                context,
+                results,
+                stage_index=stage_index,
+            )
+            succeeded_roles.add(_stage_item(specs[0], stage_index)["role"])
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"{specs[0].role}({specs[0].label or 'default'}): {exc}")
+            failed_roles.add(_stage_item(specs[0], stage_index)["role"])
+
+    partial_results = [item for item in ordered if item is not None]
+    if failures:
+        raise WorkerStageFailed("；".join(failures), partial_results, failed_roles, succeeded_roles)
+    return partial_results
 
 
 def _rerun_coders(
@@ -96,29 +252,55 @@ def _rerun_coders(
     results: list[AgentResult],
     feedback: list[str],
     revision: int,
+    stage_index: int,
 ) -> list[AgentResult]:
     coders = [build_worker(spec, provider) for spec in coder_specs]
+    ordered: list[AgentResult | None] = [None] * len(coders)
+    failures: list[str] = []
+    failed_roles: set[str] = set()
+    succeeded_roles: set[str] = set()
     if len(coders) > 1:
         with ThreadPoolExecutor(max_workers=len(coders)) as pool:
-            return list(
-                pool.map(
-                    lambda worker: worker.run_with_feedback(
-                        context,
-                        results,
-                        reviewer_feedback=feedback,
-                        revision=revision,
-                    ),
-                    coders,
-                )
+            future_map = {
+                pool.submit(
+                    _run_single_worker,
+                    worker,
+                    spec,
+                    context,
+                    results,
+                    stage_index=stage_index,
+                    revision=revision,
+                    feedback=feedback,
+                ): (index, spec)
+                for index, (worker, spec) in enumerate(zip(coders, coder_specs, strict=True))
+            }
+            for future in as_completed(future_map):
+                index, spec = future_map[future]
+                try:
+                    ordered[index] = future.result()
+                    succeeded_roles.add(_stage_item(spec, stage_index)["role"])
+                except Exception as exc:  # noqa: BLE001
+                    failures.append(f"{spec.role}({spec.label or 'default'}): {exc}")
+                    failed_roles.add(_stage_item(spec, stage_index)["role"])
+    else:
+        try:
+            ordered[0] = _run_single_worker(
+                coders[0],
+                coder_specs[0],
+                context,
+                results,
+                stage_index=stage_index,
+                revision=revision,
+                feedback=feedback,
             )
-    return [
-        coders[0].run_with_feedback(
-            context,
-            results,
-            reviewer_feedback=feedback,
-            revision=revision,
-        )
-    ]
+            succeeded_roles.add(_stage_item(coder_specs[0], stage_index)["role"])
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"{coder_specs[0].role}({coder_specs[0].label or 'default'}): {exc}")
+            failed_roles.add(_stage_item(coder_specs[0], stage_index)["role"])
+    partial_results = [item for item in ordered if item is not None]
+    if failures:
+        raise WorkerStageFailed("；".join(failures), partial_results, failed_roles, succeeded_roles)
+    return partial_results
 
 
 def _stage_item(spec: WorkerSpec, stage_index: int) -> dict:
@@ -469,12 +651,41 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             done=done_roles,
             running=running_roles,
         )
-        stage_results = _run_workers(workers, context, results)
-        results.extend(stage_results)
-        done_roles.update(running_roles)
         coder_specs = tuple(spec for spec in stage if spec.role == "CoderAgent")
         if coder_specs:
             latest_coder_specs = coder_specs
+        try:
+            stage_results = _run_workers(
+                workers,
+                context,
+                results,
+                stage,
+                stage_index=stage_index + 1,
+            )
+        except WorkerStageFailed as exc:
+            _extend_unique_results(results, exc.partial_results)
+            done_roles.update(exc.succeeded_roles)
+            save_checkpoint(
+                project_root,
+                task_id=task_id,
+                next_stage_index=stage_index,
+                done_roles=done_roles,
+                agent_results=results,
+                latest_coder_specs=_specs_to_json(latest_coder_specs),
+            )
+            _publish_adaptive(
+                project_root,
+                task_id=task_id,
+                goal=goal,
+                status="failed",
+                detail=f"阶段 {stage_index + 1} 有 worker 失败，已保存断点：{exc}",
+                plan=plan,
+                done=done_roles,
+                failed=exc.failed_roles,
+            )
+            raise RuntimeError(f"阶段 {stage_index + 1} 有 worker 失败：{exc}") from exc
+        _extend_unique_results(results, stage_results)
+        done_roles.update(running_roles)
 
         reviewer_pairs = [
             (worker, result)
@@ -518,15 +729,39 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
                 done=done_roles,
                 running={"FixLoop"},
             )
-            rewrite_results = _rerun_coders(
-                latest_coder_specs,
-                provider,
-                context,
-                results,
-                _reviewer_feedback(reviewer, reviewer_result),
-                retry_count,
-            )
-            results.extend(rewrite_results)
+            try:
+                rewrite_results = _rerun_coders(
+                    latest_coder_specs,
+                    provider,
+                    context,
+                    results,
+                    _reviewer_feedback(reviewer, reviewer_result),
+                    retry_count,
+                    stage_index=stage_index + 1,
+                )
+            except WorkerStageFailed as exc:
+                _extend_unique_results(results, exc.partial_results)
+                done_roles.update(exc.succeeded_roles)
+                save_checkpoint(
+                    project_root,
+                    task_id=task_id,
+                    next_stage_index=stage_index,
+                    done_roles=done_roles,
+                    agent_results=results,
+                    latest_coder_specs=_specs_to_json(latest_coder_specs),
+                )
+                _publish_adaptive(
+                    project_root,
+                    task_id=task_id,
+                    goal=goal,
+                    status="failed",
+                    detail=f"Fix Loop 有 worker 失败，已保存断点：{exc}",
+                    plan=plan,
+                    done=done_roles,
+                    failed=exc.failed_roles,
+                )
+                raise RuntimeError(f"Fix Loop 有 worker 失败：{exc}") from exc
+            _extend_unique_results(results, rewrite_results)
             done_roles.add("FixLoop")
             done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_coder_specs)
             reviewer = build_worker(WorkerSpec("ReviewerAgent"), provider)

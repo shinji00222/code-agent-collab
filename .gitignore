@@ -16,3 +16,4 @@ logs/workflows/
 logs/plans/
 logs/progress/
 logs/control/
+logs/runs/
