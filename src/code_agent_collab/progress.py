@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import datetime
 from pathlib import Path
+from threading import get_ident
 
 from .file_utils import ensure_dir
 
@@ -30,6 +32,14 @@ def progress_path(project_root: Path) -> Path:
     if configured:
         return Path(configured).resolve()
     return project_root / "logs" / "progress" / "current.json"
+
+
+def task_progress_path(project_root: Path, task_id: str) -> Path:
+    return project_root / "logs" / "progress" / f"{task_id}.json"
+
+
+def latest_progress_path(project_root: Path) -> Path:
+    return project_root / "logs" / "progress" / "latest.json"
 
 
 def node(label: str, status: str, detail: str) -> dict:
@@ -101,8 +111,6 @@ def publish_progress(
     nodes: list[dict],
 ) -> Path:
     """原子写入轻量进度快照，供 Web UI 在任务执行中轮询。"""
-    path = progress_path(project_root)
-    ensure_dir(path.parent)
     payload = {
         "task_id": task_id,
         "goal": goal,
@@ -111,14 +119,24 @@ def publish_progress(
         "updated_at": datetime.now().isoformat(timespec="milliseconds"),
         "nodes": nodes,
     }
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    path = progress_path(project_root)
+    _write_json_atomic(path, payload)
+    if not os.getenv(PROGRESS_ENV):
+        task_path = task_progress_path(project_root, task_id)
+        _write_json_atomic(task_path, payload)
+        _write_json_atomic(
+            latest_progress_path(project_root),
+            {
+                "task_id": task_id,
+                "path": str(task_path),
+                "updated_at": payload["updated_at"],
+            },
+        )
     return path
 
 
-def read_progress(project_root: Path) -> dict | None:
-    path = progress_path(project_root)
+def read_progress(project_root: Path, task_id: str | None = None) -> dict | None:
+    path = task_progress_path(project_root, task_id) if task_id else progress_path(project_root)
     if not path.exists():
         return None
     try:
@@ -129,3 +147,17 @@ def read_progress(project_root: Path) -> dict | None:
         return None
     payload["path"] = str(path)
     return payload
+
+
+def _write_json_atomic(path: Path, payload: dict) -> None:
+    ensure_dir(path.parent)
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.{get_ident()}.tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    for attempt in range(5):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
