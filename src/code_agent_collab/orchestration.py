@@ -12,6 +12,13 @@ from .agents.coder import CoderAgent
 from .agents.knowledge import KnowledgeAgent
 from .agents.orchestrator import ComplexityLevel, OrchestrationPlan, WorkerSpec
 from .agents.reviewer import ReviewerAgent
+from .blackboard import (
+    mark_agent_failed,
+    mark_agent_planned,
+    mark_agent_running,
+    mark_agent_skipped,
+    mark_agent_success,
+)
 from .control import (
     WorkflowPaused,
     clear_checkpoint,
@@ -156,8 +163,21 @@ def _run_single_worker(
             input_hash=input_hash,
             result=cached,
         )
+        mark_agent_skipped(
+            context.project_root,
+            task_id=context.task_id,
+            stage_index=stage_index,
+            spec=spec,
+            result=cached,
+        )
         return cached
 
+    mark_agent_running(
+        context.project_root,
+        task_id=context.task_id,
+        stage_index=stage_index,
+        spec=spec,
+    )
     start_worker_run(
         context.project_root,
         task_id=context.task_id,
@@ -176,13 +196,21 @@ def _run_single_worker(
         else:
             result = worker.run(context, results)
     except Exception as exc:  # noqa: BLE001 - worker 失败要先落账，再交给主控处理
+        error = f"{type(exc).__name__}: {exc}"
         finish_worker_failed(
             context.project_root,
             task_id=context.task_id,
             stage_index=stage_index,
             spec=spec,
             input_hash=input_hash,
-            error=f"{type(exc).__name__}: {exc}",
+            error=error,
+        )
+        mark_agent_failed(
+            context.project_root,
+            task_id=context.task_id,
+            stage_index=stage_index,
+            spec=spec,
+            error=error,
         )
         raise
     finish_worker_success(
@@ -191,6 +219,13 @@ def _run_single_worker(
         stage_index=stage_index,
         spec=spec,
         input_hash=input_hash,
+        result=result,
+    )
+    mark_agent_success(
+        context.project_root,
+        task_id=context.task_id,
+        stage_index=stage_index,
+        spec=spec,
         result=result,
     )
     return result
@@ -609,6 +644,14 @@ def create_adaptive_plan(project_root: Path, goal: str) -> AdaptivePlanResult:
     plan = orchestrator.last_plan
     if plan is None:
         raise RuntimeError("OrchestratorAgent 未产出执行方案")
+    for stage_index, stage in enumerate(plan.stages, start=1):
+        for spec in stage:
+            mark_agent_planned(
+                project_root,
+                task_id=context_pack.task_id,
+                stage_index=stage_index,
+                spec=spec,
+            )
 
     plan_path = _plan_dir(project_root) / f"{context_pack.task_id}.json"
     ensure_dir(plan_path.parent)

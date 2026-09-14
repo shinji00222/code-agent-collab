@@ -8,6 +8,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from code_agent_collab.agents.orchestrator import WorkerSpec
+from code_agent_collab.blackboard import mark_agent_running
+from code_agent_collab.progress import publish_progress
 from code_agent_collab.webui import (
     PAGE,
     PROJECT_ROOT,
@@ -230,6 +233,32 @@ class ProgressSnapshotTests(unittest.TestCase):
             self.assertEqual(len(branch_nodes), 1)
             self.assertEqual(branch_nodes[0]["children"][0]["label"], "CoderAgent(实现)")
             self.assertIn("负责 src/", branch_nodes[0]["children"][0]["detail"])
+
+    def test_progress_snapshot_exposes_blackboard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_id = "20260914-120000-黑板"
+            publish_progress(
+                root,
+                task_id=task_id,
+                goal="黑板测试",
+                status="running",
+                detail="测试",
+                nodes=[],
+            )
+            mark_agent_running(
+                root,
+                task_id=task_id,
+                stage_index=1,
+                spec=WorkerSpec("CoderAgent", "实现", ("src/",)),
+            )
+
+            snapshot = build_progress_snapshot(root)
+
+            self.assertIsNotNone(snapshot["blackboard"])
+            self.assertEqual(snapshot["blackboard"]["task_id"], task_id)
+            self.assertEqual(snapshot["blackboard"]["agents"][0]["label"], "实现")
+            self.assertEqual(snapshot["blackboard"]["agents"][0]["owned_paths"], ["src/"])
 
     def test_progress_snapshot_exposes_pause_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

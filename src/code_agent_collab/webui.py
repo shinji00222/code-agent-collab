@@ -13,6 +13,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from .blackboard import blackboard_snapshot
 from .control import CHECKPOINT_SUFFIX, clear_pause_request, control_dir, request_pause
 from .providers import ProviderConfigurationError, create_provider
 from .progress import read_progress
@@ -1529,16 +1530,19 @@ def build_progress_snapshot(project_root: Path = PROJECT_ROOT) -> dict:
     if latest_plan is not None:
         latest_workflow, _ = _workflow_snapshot(matching_workflow_path)
     nodes = plan_nodes or workflow_nodes
+    blackboard = _blackboard_for_snapshot(project_root, runtime_progress, latest_plan, latest_workflow)
     if runtime_progress is not None:
         latest_plan = latest_plan or {
             "task_id": runtime_progress.get("task_id", ""),
             "goal": runtime_progress.get("goal", ""),
             "status": runtime_progress.get("status", ""),
         }
+        blackboard = _blackboard_for_snapshot(project_root, runtime_progress, latest_plan, latest_workflow)
         return {
             "latest_plan": latest_plan,
             "latest_workflow": latest_workflow,
             "latest_checkpoint": latest_checkpoint,
+            "blackboard": blackboard,
             "runtime": runtime_progress,
             "nodes": runtime_progress.get("nodes", []),
         }
@@ -1546,9 +1550,28 @@ def build_progress_snapshot(project_root: Path = PROJECT_ROOT) -> dict:
         "latest_plan": latest_plan,
         "latest_workflow": latest_workflow,
         "latest_checkpoint": latest_checkpoint,
+        "blackboard": blackboard,
         "runtime": None,
         "nodes": nodes,
     }
+
+
+def _blackboard_for_snapshot(
+    project_root: Path,
+    runtime_progress: dict | None,
+    latest_plan: dict | None,
+    latest_workflow: dict | None,
+) -> dict | None:
+    task_id = ""
+    if runtime_progress is not None:
+        task_id = str(runtime_progress.get("task_id", ""))
+    if not task_id and latest_plan is not None:
+        task_id = str(latest_plan.get("task_id", ""))
+    if not task_id and latest_workflow is not None:
+        task_id = str(latest_workflow.get("task_id", ""))
+    if not task_id:
+        return None
+    return blackboard_snapshot(project_root, task_id)
 
 
 class Handler(BaseHTTPRequestHandler):

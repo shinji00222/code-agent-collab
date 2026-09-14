@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from code_agent_collab.agents import AgentContext, AgentResult, PermissionLevel
+from code_agent_collab.blackboard import load_blackboard
 from code_agent_collab.control import (
     WorkflowPaused,
     clear_pause_request,
@@ -130,6 +131,10 @@ class ApprovalGateTests(unittest.TestCase):
             self.assertIn("CoderAgent", roles)
             self.assertIn("ReviewerAgent", roles)
             self.assertTrue(list((root / "dev-vault" / "projects").glob("*-coder-draft.md")))
+            entries = load_blackboard(root, plan_result.task_id)
+            self.assertEqual(entries["stage1-CoderAgent-default"].status, "success")
+            self.assertIn("生成代码草稿", entries["stage1-CoderAgent-default"].outputs)
+            self.assertEqual(entries["stage2-ReviewerAgent-default"].status, "success")
             self.assertTrue(result.workflow_log_path.exists())
             self.assertTrue(result.reflection.output_path.exists())
 
@@ -294,6 +299,9 @@ class WorkerRunLedgerTests(unittest.TestCase):
             records = load_worker_runs(root, "task-1")
             self.assertEqual(records["stage2-CoderAgent-模块A"].status, "success")
             self.assertEqual(records["stage2-CoderAgent-模块B"].status, "failed")
+            entries = load_blackboard(root, "task-1")
+            self.assertEqual(entries["stage2-CoderAgent-模块A"].status, "success")
+            self.assertEqual(entries["stage2-CoderAgent-模块B"].status, "failed")
 
             worker_a_retry = FailingAgent("CoderAgent", "模块A")
             worker_b_retry = StaticAgent("CoderAgent", "模块B")
@@ -311,6 +319,9 @@ class WorkerRunLedgerTests(unittest.TestCase):
             records = load_worker_runs(root, "task-1")
             self.assertEqual(records["stage2-CoderAgent-模块A"].status, "skipped")
             self.assertEqual(records["stage2-CoderAgent-模块B"].status, "success")
+            entries = load_blackboard(root, "task-1")
+            self.assertEqual(entries["stage2-CoderAgent-模块A"].status, "skipped")
+            self.assertEqual(entries["stage2-CoderAgent-模块B"].status, "success")
 
     def test_parallel_workers_with_overlapping_owned_paths_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
