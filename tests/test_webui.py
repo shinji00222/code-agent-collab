@@ -15,6 +15,7 @@ from code_agent_collab.webui import (
     PAGE,
     PROJECT_ROOT,
     SRC_DIR,
+    PROJECT_ROOT_ENV,
     _kill_process_tree,
     build_progress_snapshot,
     build_discussion_goal,
@@ -22,6 +23,7 @@ from code_agent_collab.webui import (
     clear_discussion,
     discuss_with_orchestrator,
     force_stop_active_work,
+    resolve_project_root,
     run_cli,
 )
 
@@ -172,6 +174,30 @@ class DiscussionTests(unittest.TestCase):
         self.assertEqual(SRC_DIR, PROJECT_ROOT / "src")
         self.assertTrue((PROJECT_ROOT / "pyproject.toml").exists())
         self.assertTrue((SRC_DIR / "code_agent_collab").exists())
+
+    def test_frozen_project_root_walks_out_of_dist_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src" / "code_agent_collab").mkdir(parents=True)
+            (root / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+            exe = root / "dist" / "MultiAgentWorkbench.exe"
+            exe.parent.mkdir()
+            exe.write_text("", encoding="utf-8")
+
+            resolved = resolve_project_root(executable_path=exe, frozen=True)
+
+            self.assertEqual(resolved, root.resolve())
+
+    def test_project_root_env_override_wins_in_frozen_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.dict(os.environ, {PROJECT_ROOT_ENV: str(root)}, clear=False):
+                resolved = resolve_project_root(
+                    executable_path=Path("C:/elsewhere/MultiAgentWorkbench.exe"),
+                    frozen=True,
+                )
+
+            self.assertEqual(resolved, root.resolve())
 
 
 class ProgressSnapshotTests(unittest.TestCase):
