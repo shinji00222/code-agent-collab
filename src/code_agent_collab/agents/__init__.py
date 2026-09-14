@@ -5,6 +5,7 @@ from .planner import PlannerAgent
 from .validator import ValidatorAgent
 from .reflector import ReflectorAgent
 from .coder import CoderAgent
+from .integrator import IntegratorAgent
 from .reviewer import ReviewerAgent
 from .orchestrator import (
     ComplexityLevel,
@@ -27,6 +28,7 @@ __all__ = [
     "ValidatorAgent",
     "ReflectorAgent",
     "CoderAgent",
+    "IntegratorAgent",
     "ReviewerAgent",
     "OrchestratorAgent",
     "ComplexityLevel",

@@ -79,6 +79,9 @@ class ReviewerAgent(BaseAgent):
         projects_dir = context.project_root / "dev-vault" / "projects"
         if not projects_dir.exists():
             return []
+        integrated = projects_dir / f"{context.task_id}-integrated-draft.md"
+        if integrated.exists():
+            return [integrated]
         matches = sorted(projects_dir.glob(f"{context.task_id}-coder-draft*.md"))
         latest_by_worker: dict[str, tuple[int, Path]] = {}
         prefix = f"{context.task_id}-coder-draft"

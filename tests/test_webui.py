@@ -87,6 +87,7 @@ class PageTests(unittest.TestCase):
         self.assertIn("findAgentEntry(node)", PAGE)
         self.assertIn("查看 ${entryDisplayLabel(entry)} 详情", PAGE)
         self.assertIn("点击进度树里的 Agent 查看职责、输出和阻塞", PAGE)
+        self.assertIn('take("IntegratorAgent")', PAGE)
         self.assertIn("ReviewerAgent", PAGE)
         self.assertIn("Fix Loop", PAGE)
         self.assertIn("开始协同工作", PAGE)

@@ -34,11 +34,17 @@ class ShortThenGoodProvider(AIProvider):
 
     def __init__(self) -> None:
         self.coder_calls = 0
+        self.integrator_calls = 0
 
     def complete(self, system_prompt: str, user_prompt: str) -> str:
         del system_prompt
         if "几个 worker" in user_prompt:
             return "COMPLEX"
+        if "合并成一份统一草稿" in user_prompt:
+            self.integrator_calls += 1
+            if self.integrator_calls == 1:
+                return "太短"
+            return "合并后的有效统一草稿。" * 20
         if "代码实现草稿" not in user_prompt:
             return "模拟 AI 已收到任务：" + user_prompt
         self.coder_calls += 1
@@ -232,7 +238,7 @@ class AdaptiveWorkflowTests(unittest.TestCase):
             self.assertEqual(roles[2], "CoderAgent")
             self.assertEqual(roles[3], "ReviewerAgent")
 
-    def test_complex_task_parallel_coders_and_reviewer(self) -> None:
+    def test_complex_task_parallel_coders_integrator_and_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_project(tmp)
             result = run_adaptive_workflow(
@@ -241,15 +247,18 @@ class AdaptiveWorkflowTests(unittest.TestCase):
 
             roles = [item.role for item in result.agent_results]
             self.assertEqual(result.plan.complexity.value, "complex")
-            self.assertEqual(result.plan.worker_count, 4)
-            # Orchestrator + Knowledge + CoderA + CoderB + Reviewer
-            self.assertEqual(len(result.agent_results), 5)
+            self.assertEqual(result.plan.worker_count, 5)
+            # Orchestrator + Knowledge + CoderA + CoderB + Integrator + Reviewer
+            self.assertEqual(len(result.agent_results), 6)
             self.assertEqual(roles.count("CoderAgent"), 2)
+            self.assertIn("IntegratorAgent", roles)
             self.assertIn("ReviewerAgent", roles)
+            self.assertGreater(roles.index("ReviewerAgent"), roles.index("IntegratorAgent"))
             drafts = sorted(
                 (root / "dev-vault" / "projects").glob(f"{result.task_id}-coder-draft-*.md")
             )
             self.assertEqual(len(drafts), 2)
+            self.assertTrue((root / "dev-vault" / "projects" / f"{result.task_id}-integrated-draft.md").exists())
             self.assertIn("评审", result.agent_results[-1].summary)
 
     def test_complex_task_rewrites_parallel_coders_once_when_review_fails(self) -> None:
@@ -264,6 +273,7 @@ class AdaptiveWorkflowTests(unittest.TestCase):
 
             roles = [item.role for item in result.agent_results]
             self.assertEqual(roles.count("CoderAgent"), 4)
+            self.assertEqual(roles.count("IntegratorAgent"), 2)
             self.assertEqual(roles.count("ReviewerAgent"), 2)
             self.assertEqual(result.agent_results[-1].role, "ReviewerAgent")
             self.assertIn("通过", result.agent_results[-1].summary)

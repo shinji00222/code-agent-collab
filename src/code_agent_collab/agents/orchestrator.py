@@ -56,13 +56,14 @@ TEMPLATES: dict[ComplexityLevel, OrchestrationPlan] = {
     ),
     ComplexityLevel.COMPLEX: OrchestrationPlan(
         complexity=ComplexityLevel.COMPLEX,
-        label="检索 + 实现/测试分工 + 评审（4 阶段）",
+        label="检索 + 实现/测试分工 + 合并 + 评审（5 worker）",
         stages=(
             (WorkerSpec("KnowledgeAgent"),),
             (
                 WorkerSpec("CoderAgent", "实现", ("src/",)),
                 WorkerSpec("CoderAgent", "测试", ("tests/",)),
             ),
+            (WorkerSpec("IntegratorAgent"),),
             (WorkerSpec("ReviewerAgent"),),
         ),
     ),

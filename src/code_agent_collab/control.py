@@ -95,6 +95,7 @@ def save_checkpoint(
     done_roles: set[str],
     agent_results: list[AgentResult],
     latest_coder_specs: list[dict],
+    latest_integrator_specs: list[dict] | None = None,
 ) -> Path:
     path = checkpoint_path(project_root, task_id)
     ensure_dir(path.parent)
@@ -104,6 +105,7 @@ def save_checkpoint(
         "done_roles": sorted(done_roles),
         "agent_results": [_result_to_json(result) for result in agent_results],
         "latest_coder_specs": latest_coder_specs,
+        "latest_integrator_specs": latest_integrator_specs or [],
         "updated_at": datetime.now().isoformat(timespec="milliseconds"),
     }
     temporary = path.with_suffix(path.suffix + ".tmp")

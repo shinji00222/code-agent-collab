@@ -71,6 +71,20 @@ class ReviewerAgentTests(unittest.TestCase):
             self.assertEqual(agent.last_verdict, "通过")
             self.assertIn(revision.name, result.evidence[0])
 
+    def test_reviewer_prefers_integrated_draft_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_draft(root, "# 太短的 coder 草稿")
+            integrated = root / "dev-vault" / "projects" / f"{TASK_ID}-integrated-draft.md"
+            write_text(integrated, _normal_content())
+
+            agent = ReviewerAgent()
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "通过")
+            self.assertIn(integrated.name, result.evidence[0])
+            self.assertNotIn("coder-draft", result.evidence[0])
+
     def test_sensitive_draft_marks_needs_fix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

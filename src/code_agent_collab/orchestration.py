@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .agents import AgentContext, AgentResult, OrchestratorAgent, PermissionLevel
 from .agents.coder import CoderAgent
+from .agents.integrator import IntegratorAgent
 from .agents.knowledge import KnowledgeAgent
 from .agents.orchestrator import ComplexityLevel, OrchestrationPlan, WorkerSpec
 from .agents.reviewer import ReviewerAgent
@@ -102,6 +103,8 @@ def build_worker(spec: WorkerSpec, provider: AIProvider):
         return KnowledgeAgent()
     if spec.role == "CoderAgent":
         return CoderAgent(provider=provider, worker_label=spec.label, owned_paths=spec.owned_paths)
+    if spec.role == "IntegratorAgent":
+        return IntegratorAgent(provider=provider)
     if spec.role == "ReviewerAgent":
         return ReviewerAgent(provider=provider)
     raise ValueError(f"未知 worker 角色：{spec.role}")
@@ -717,12 +720,14 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
         if not results:
             results = [orchestrator_result]
         latest_coder_specs = _specs_from_json(checkpoint.get("latest_coder_specs", []))
+        latest_integrator_specs = _specs_from_json(checkpoint.get("latest_integrator_specs", []))
         done_roles = set(checkpoint.get("done_roles", set()))
         start_stage_index = int(checkpoint.get("next_stage_index", 0))
         resume_detail = f"从暂停断点继续执行，下一阶段序号：{start_stage_index + 1}。"
     else:
         results = [orchestrator_result]
         latest_coder_specs = ()
+        latest_integrator_specs = ()
         done_roles = {"ContextPack", "OrchestratorAgent", "ApprovalGate"}
         start_stage_index = 0
         resume_detail = "方案已批准，开始执行 workers。"
@@ -760,6 +765,9 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
         coder_specs = tuple(spec for spec in stage if spec.role == "CoderAgent")
         if coder_specs:
             latest_coder_specs = coder_specs
+        integrator_specs = tuple(spec for spec in stage if spec.role == "IntegratorAgent")
+        if integrator_specs:
+            latest_integrator_specs = integrator_specs
         try:
             stage_results = _run_workers(
                 workers,
@@ -778,6 +786,7 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
                 done_roles=done_roles,
                 agent_results=results,
                 latest_coder_specs=_specs_to_json(latest_coder_specs),
+                latest_integrator_specs=_specs_to_json(latest_integrator_specs),
             )
             _publish_adaptive(
                 project_root,
@@ -806,6 +815,7 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
                 done_roles=done_roles,
                 agent_results=results,
                 latest_coder_specs=_specs_to_json(latest_coder_specs),
+                latest_integrator_specs=_specs_to_json(latest_integrator_specs),
             )
             continue
 
@@ -855,6 +865,7 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
                     done_roles=done_roles,
                     agent_results=results,
                     latest_coder_specs=_specs_to_json(latest_coder_specs),
+                    latest_integrator_specs=_specs_to_json(latest_integrator_specs),
                 )
                 _publish_adaptive(
                     project_root,
@@ -870,6 +881,31 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             _extend_unique_results(results, rewrite_results)
             done_roles.add("FixLoop")
             done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_coder_specs)
+            if latest_integrator_specs:
+                _publish_adaptive(
+                    project_root,
+                    task_id=task_id,
+                    goal=goal,
+                    status="running",
+                    detail="CoderAgent 已重写，IntegratorAgent 正在重新合并草稿。",
+                    plan=plan,
+                    done=done_roles,
+                    running={"IntegratorAgent"},
+                )
+                integrator_results = [
+                    _run_single_worker(
+                        build_worker(spec, provider),
+                        spec,
+                        context,
+                        results,
+                        stage_index=stage_index + 1,
+                        revision=retry_count,
+                        feedback=_reviewer_feedback(reviewer, reviewer_result),
+                    )
+                    for spec in latest_integrator_specs
+                ]
+                _extend_unique_results(results, integrator_results)
+                done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_integrator_specs)
             reviewer = build_worker(WorkerSpec("ReviewerAgent"), provider)
             _pause_if_requested(
                 project_root,

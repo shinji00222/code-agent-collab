@@ -3,6 +3,7 @@ from __future__ import annotations
 from .base import BaseAgent
 from .coder import CoderAgent
 from .coordinator import CoordinatorAgent
+from .integrator import IntegratorAgent
 from .knowledge import KnowledgeAgent
 from .orchestrator import OrchestratorAgent
 from .planner import PlannerAgent
@@ -22,6 +23,7 @@ def create_agent(role: str, provider=None) -> BaseAgent:
         "KnowledgeAgent": lambda: KnowledgeAgent(),
         "PlannerAgent": lambda: PlannerAgent(provider=provider),
         "CoderAgent": lambda: CoderAgent(provider=provider),
+        "IntegratorAgent": lambda: IntegratorAgent(provider=provider),
         "ReviewerAgent": lambda: ReviewerAgent(provider=provider),
         "OrchestratorAgent": lambda: OrchestratorAgent(provider=provider),
         "ValidatorAgent": lambda: ValidatorAgent(),

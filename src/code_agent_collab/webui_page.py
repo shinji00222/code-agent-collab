@@ -793,6 +793,7 @@ PAGE = """<!DOCTYPE html>
     const approval = take("ApprovalGate") || placeholderNode("ApprovalGate", "人工审批");
     const knowledge = take("KnowledgeAgent") || placeholderNode("KnowledgeAgent", "KnowledgeAgent");
     const coders = takeAll("CoderAgent");
+    const integrator = take("IntegratorAgent");
     const reviewer = take("ReviewerAgent");
     const fixLoop = take("FixLoop");
     const pauseGate = take("PauseGate");
@@ -806,6 +807,7 @@ PAGE = """<!DOCTYPE html>
     tree.push(approval);
     if (coders.length) knowledge.children = coders;
     tree.push(knowledge);
+    if (integrator) tree.push(integrator);
     if (reviewer) tree.push(reviewer);
     if (fixLoop && fixLoop.status !== "idle") tree.push(fixLoop);
     if (pauseGate && pauseGate.status !== "idle") tree.push(pauseGate);

@@ -39,10 +39,15 @@ class ComplexityTests(unittest.TestCase):
     def test_plan_worker_counts(self) -> None:
         self.assertEqual(build_plan(ComplexityLevel.SIMPLE).worker_count, 2)
         self.assertEqual(build_plan(ComplexityLevel.MEDIUM).worker_count, 3)
-        self.assertEqual(build_plan(ComplexityLevel.COMPLEX).worker_count, 4)
+        self.assertEqual(build_plan(ComplexityLevel.COMPLEX).worker_count, 5)
         for level in ComplexityLevel:
             roles = [spec.role for stage in build_plan(level).stages for spec in stage]
             self.assertIn("ReviewerAgent", roles)
+        complex_roles = [spec.role for stage in build_plan(ComplexityLevel.COMPLEX).stages for spec in stage]
+        self.assertGreater(
+            complex_roles.index("ReviewerAgent"),
+            complex_roles.index("IntegratorAgent"),
+        )
 
     def test_complex_plan_assigns_non_overlapping_coder_paths(self) -> None:
         plan = build_plan(ComplexityLevel.COMPLEX)
