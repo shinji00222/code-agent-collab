@@ -130,6 +130,21 @@ PAGE = """<!DOCTYPE html>
     box-shadow: 0 0 16px rgba(184,108,255,0.45);
   }
   .tree-node:last-child::after, .tree-node.no-tail::after { display: none; }
+  .tree-node.inspectable {
+    cursor: pointer;
+  }
+  .tree-node.inspectable:focus-visible .node-body,
+  .tree-node.inspectable:hover .node-body,
+  .tree-node.selected .node-body {
+    outline: 1px solid rgba(184,108,255,0.48);
+    background: rgba(12,8,17,0.94);
+  }
+  .tree-node.selected .dot {
+    box-shadow:
+      0 0 0 5px #050505,
+      0 0 0 10px rgba(184,108,255,0.2),
+      0 0 24px rgba(184,108,255,0.7);
+  }
   .dot {
     position: relative;
     z-index: 2;
@@ -303,6 +318,35 @@ PAGE = """<!DOCTYPE html>
     color: var(--muted);
     margin-left: 20px;
   }
+  .agent-inspector {
+    margin-top: 14px;
+    width: min(520px, calc(100vw - 150px));
+    border-left: 2px solid #242228;
+    padding: 10px 0 10px 14px;
+    color: #bcb6c3;
+  }
+  .agent-inspector.empty {
+    color: #625d67;
+  }
+  .inspector-title {
+    color: var(--purple-2);
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  .inspector-grid {
+    display: grid;
+    grid-template-columns: 94px minmax(0, 1fr);
+    gap: 5px 10px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .inspector-key {
+    color: #6f6875;
+  }
+  .inspector-value {
+    color: #d8d3dc;
+    word-break: break-word;
+  }
   .quickbar {
     display: flex;
     gap: 8px;
@@ -415,6 +459,14 @@ PAGE = """<!DOCTYPE html>
       transform: scale(0.66);
       transform-origin: left top;
     }
+    .agent-inspector {
+      width: 100%;
+      margin-top: 6px;
+      padding-left: 10px;
+    }
+    .inspector-grid {
+      grid-template-columns: 76px minmax(0, 1fr);
+    }
     .branch {
       max-width: none;
     }
@@ -445,6 +497,13 @@ PAGE = """<!DOCTYPE html>
         <div class="tree-canvas" id="agentTreeInline">
           <div class="tree-empty">正在读取本地方案和工作流日志。</div>
         </div>
+        <section class="agent-inspector empty" id="agentInspector" aria-live="polite">
+          <div class="inspector-title">Agent details</div>
+          <div class="inspector-grid">
+            <div class="inspector-key">state</div>
+            <div class="inspector-value">点击进度树里的 Agent 查看职责、输出和阻塞。</div>
+          </div>
+        </section>
       </section>
       <div class="quickbar">
         <button class="collab-switch" id="createPlan" type="button">生成主控方案</button>
@@ -483,6 +542,7 @@ PAGE = """<!DOCTYPE html>
   const progressDetail = document.getElementById("progressDetail");
   const progressSummaryInline = document.getElementById("progressSummaryInline");
   const agentTreeInline = document.getElementById("agentTreeInline");
+  const agentInspector = document.getElementById("agentInspector");
   const screen = document.getElementById("screen");
   const createPlan = document.getElementById("createPlan");
   const startCollab = document.getElementById("startCollab");
@@ -492,6 +552,7 @@ PAGE = """<!DOCTYPE html>
   const modeHint = document.getElementById("modeHint");
   let latestProgress = null;
   let progressTimer = null;
+  let selectedAgentId = null;
 
   function setText(node, text) {
     if (node) node.textContent = text;
@@ -527,8 +588,25 @@ PAGE = """<!DOCTYPE html>
   }
 
   function renderNode(node, className = "tree-node", noTail = false, depth = 0) {
+    const entry = findAgentEntry(node);
     const wrap = document.createElement("div");
-    wrap.className = `${className} depth-${depth} ${node.status || "idle"}${noTail ? " no-tail" : ""}${node.children && node.children.length ? " has-children" : ""}`;
+    wrap.className = `${className} depth-${depth} ${node.status || "idle"}${noTail ? " no-tail" : ""}${node.children && node.children.length ? " has-children" : ""}${entry ? " inspectable" : ""}${entry && selectedAgentId === entry.agent_id ? " selected" : ""}`;
+    if (entry) {
+      wrap.dataset.agentId = entry.agent_id;
+      wrap.tabIndex = 0;
+      wrap.setAttribute("role", "button");
+      wrap.setAttribute("aria-label", `查看 ${entryDisplayLabel(entry)} 详情`);
+      wrap.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectAgent(entry.agent_id);
+      });
+      wrap.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectAgent(entry.agent_id);
+        }
+      });
+    }
     const dot = document.createElement("span");
     dot.className = "dot";
     const body = document.createElement("div");
@@ -549,6 +627,96 @@ PAGE = """<!DOCTYPE html>
       wrap.appendChild(renderBranch(node.children, false, depth + 1));
     }
     return wrap;
+  }
+
+  function blackboardAgents() {
+    return (((latestProgress || {}).blackboard || {}).agents || []);
+  }
+
+  function entryDisplayLabel(entry) {
+    if (!entry) return "";
+    return entry.label ? `${entry.role}(${entry.label})` : entry.role;
+  }
+
+  function nodeWorkerLabel(node) {
+    const label = String(node.label || "");
+    const match = label.match(/\\((.+)\\)$/);
+    return match ? match[1] : "";
+  }
+
+  function findAgentEntry(node) {
+    const agents = blackboardAgents();
+    if (!agents.length || !node) return null;
+    if (node.agent_id) {
+      const byId = agents.find((agent) => agent.agent_id === node.agent_id);
+      if (byId) return byId;
+    }
+    const role = roleName(node);
+    const workerLabel = nodeWorkerLabel(node);
+    const exact = agents.find((agent) => agent.role === role && (agent.label || "") === workerLabel);
+    if (exact) return exact;
+    const sameRole = agents.filter((agent) => agent.role === role);
+    return sameRole.length === 1 ? sameRole[0] : null;
+  }
+
+  function selectAgent(agentId) {
+    selectedAgentId = agentId;
+    updateInspector();
+    refreshSelectedNode();
+  }
+
+  function refreshSelectedNode() {
+    agentTreeInline.querySelectorAll(".tree-node.selected").forEach((node) => {
+      node.classList.remove("selected");
+    });
+    if (!selectedAgentId) return;
+    const selected = agentTreeInline.querySelector(`[data-agent-id="${CSS.escape(selectedAgentId)}"]`);
+    if (selected) selected.classList.add("selected");
+  }
+
+  function formatList(items, empty = "-") {
+    const values = (items || []).filter(Boolean);
+    return values.length ? values.join("\\n") : empty;
+  }
+
+  function inspectorRow(key, value) {
+    const keyNode = document.createElement("div");
+    keyNode.className = "inspector-key";
+    keyNode.textContent = key;
+    const valueNode = document.createElement("div");
+    valueNode.className = "inspector-value";
+    valueNode.textContent = value;
+    return [keyNode, valueNode];
+  }
+
+  function updateInspector() {
+    if (!agentInspector) return;
+    const agents = blackboardAgents();
+    const entry = agents.find((agent) => agent.agent_id === selectedAgentId);
+    agentInspector.innerHTML = "";
+    const title = document.createElement("div");
+    title.className = "inspector-title";
+    title.textContent = entry ? entryDisplayLabel(entry) : "Agent details";
+    const grid = document.createElement("div");
+    grid.className = "inspector-grid";
+    const rows = entry
+      ? [
+          ["state", entry.status || "-"],
+          ["paths", formatList(entry.owned_paths)],
+          ["outputs", formatList(entry.outputs)],
+          ["files", formatList(entry.output_paths)],
+          ["blockers", formatList(entry.blockers)],
+          ["notes", formatList(entry.notes)],
+        ]
+      : [["state", agents.length ? "点击进度树里的 Agent 查看职责、输出和阻塞。" : "当前任务还没有 blackboard 数据。"]];
+    rows.forEach(([key, value]) => {
+      const [keyNode, valueNode] = inspectorRow(key, value);
+      grid.appendChild(keyNode);
+      grid.appendChild(valueNode);
+    });
+    agentInspector.className = `agent-inspector${entry ? "" : " empty"}`;
+    agentInspector.appendChild(title);
+    agentInspector.appendChild(grid);
   }
 
   function branchReached(children) {
@@ -674,6 +842,8 @@ PAGE = """<!DOCTYPE html>
       empty.className = "tree-empty";
       empty.textContent = "暂无可展示的 Agent 进度。先运行 run 或 run-adaptive。";
       agentTreeInline.appendChild(empty);
+      selectedAgentId = null;
+      updateInspector();
       return;
     }
 
@@ -684,6 +854,9 @@ PAGE = """<!DOCTYPE html>
       }
       agentTreeInline.appendChild(renderNode(node, "tree-node", index === nodes.length - 1));
     });
+    const selectedExists = blackboardAgents().some((agent) => agent.agent_id === selectedAgentId);
+    if (!selectedExists) selectedAgentId = null;
+    updateInspector();
   }
 
   async function refreshProgress() {
