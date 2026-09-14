@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..apply import parse_draft, validate_changes
 from ..config import load_config
 from ..providers import AIProvider, create_provider
 from ..review import scan_sensitive
@@ -55,6 +56,7 @@ class ReviewerAgent(BaseAgent):
             vault = Path(load_config(context.project_root).main_vault_path)
             if _mentions_main_vault_outside_project(content, vault, context.project_root):
                 reasons.append(f"草稿 {name} 内容引用了主知识库路径，疑似越权")
+            reasons.extend(_review_draft_structure(context.project_root, name, draft_body))
 
         verdict = "通过" if not reasons else "需修改"
         self.last_verdict = verdict
@@ -66,7 +68,7 @@ class ReviewerAgent(BaseAgent):
             summary=f"草稿评审结论：{verdict}（评审 {len(draft_paths)} 份草稿，{len(reasons)} 个问题）",
             evidence=[
                 f"草稿路径：{'、'.join(str(p) for p in draft_paths) or '未找到'}",
-                "检查项：存在性 / 内容长度 / 敏感信息 / 越权",
+                "检查项：存在性 / 内容长度 / 敏感信息 / 越权 / 草稿结构 / 路径范围 / 测试方法 / 冲突标记",
             ],
             outputs=reasons or ["评审通过，无问题"],
             risks=[] if verdict == "通过" else ["草稿存在问题，打回修改前不应进入正式流程。"],
@@ -128,7 +130,59 @@ def _extract_ai_draft_body(content: str) -> str:
     if marker not in content:
         return content
     body = content.split(marker, 1)[1]
-    next_section = "\n## "
-    if next_section in body:
-        body = body.split(next_section, 1)[0]
+    for boundary in ("\n## 安全边界", "\n## 输入草稿", "\n## Reviewer 反馈"):
+        if boundary in body:
+            body = body.split(boundary, 1)[0]
     return body
+
+
+def _review_draft_structure(project_root: Path, name: str, draft_body: str) -> list[str]:
+    reasons: list[str] = []
+    parsed = parse_draft(draft_body)
+    for error in parsed.errors:
+        if _is_template_placeholder_error(error):
+            continue
+        reasons.append(f"草稿 {name} 结构不完整：{error}")
+
+    path_errors = validate_changes(project_root, parsed.changes)
+    for error in path_errors:
+        if _is_template_placeholder_error(error):
+            continue
+        reasons.append(f"草稿 {name} 路径不合规：{error}")
+
+    if parsed.test_method and not _has_concrete_test_method(parsed.test_method):
+        reasons.append(f"草稿 {name} 测试方法过于笼统，需写明具体命令或检查点")
+    if _has_unresolved_conflict_marker(draft_body):
+        reasons.append(f"草稿 {name} 包含未解决冲突标记")
+    return reasons
+
+
+def _is_template_placeholder_error(error: str) -> bool:
+    return "<路径>" in error or "<文件相对路径>" in error
+
+
+def _has_concrete_test_method(test_method: str) -> bool:
+    text = test_method.lower()
+    concrete_tokens = (
+        "python",
+        "pytest",
+        "unittest",
+        "npm",
+        "pnpm",
+        "node",
+        "pwsh",
+        "powershell",
+        "curl",
+        "http",
+        "点击",
+        "打开",
+        "检查",
+        "验证",
+        "运行",
+        "命令",
+    )
+    return any(token in text for token in concrete_tokens)
+
+
+def _has_unresolved_conflict_marker(content: str) -> bool:
+    return any(marker in content for marker in ("<<<<<<<", "=======", ">>>>>>>"))

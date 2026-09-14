@@ -892,7 +892,7 @@ PAGE = """<!DOCTYPE html>
     append(`[${nowStamp()}] > ${command}`, "cmdline");
     startPolling();
     try {
-      const resp = await fetch("/api/command", {
+      const resp = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command }),
@@ -904,6 +904,35 @@ PAGE = """<!DOCTYPE html>
         stopPollingSoon();
         return;
       }
+      append(`[${nowStamp()}] job ${data.job_id} started`, "out");
+      await pollJob(data.job_id, command);
+    } catch (e) {
+      append(`网络错误：${String(e)}`, "err");
+      setText(runStatus, "failed");
+    } finally {
+      stopPollingSoon();
+    }
+  }
+
+  async function pollJob(jobId, command) {
+    while (true) {
+      const resp = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
+      const data = await resp.json();
+      if (!resp.ok) {
+        append(data.error || "任务读取失败", "err");
+        setText(runStatus, "failed");
+        return;
+      }
+      setText(runStatus, data.status);
+      if (!data.done) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        continue;
+      }
+      if (data.error) {
+        append(data.error, "err");
+        setText(runStatus, data.status === "timeout" ? "timeout" : "failed");
+        return;
+      }
       append(data.output || "命令已完成。", data.code === 0 || data.code === 3 ? "out" : "err");
       setText(runStatus, data.code === 0 ? "done" : data.code === 3 ? "paused" : "failed");
       if (command === "provider" && data.output) {
@@ -912,11 +941,7 @@ PAGE = """<!DOCTYPE html>
         if (providerMatch) setText(providerText, providerMatch[1].trim());
         if (modelMatch) setText(modelText, modelMatch[1].trim());
       }
-    } catch (e) {
-      append(`网络错误：${String(e)}`, "err");
-      setText(runStatus, "failed");
-    } finally {
-      stopPollingSoon();
+      return;
     }
   }
 

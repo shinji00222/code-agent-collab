@@ -9,7 +9,7 @@
 
 ## 当前版本
 
-当前版本：`v0.12.6`（修复版）
+当前版本：`v0.13.0`（开发版）
 
 阶段定位：主知识库只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + Web 终端 + 草稿应用实验能力。
 
@@ -78,8 +78,8 @@ python -m code_agent_collab.webui
 - `plans`：列出已保存的主控方案，显示任务、复杂度、worker 数量和状态（待批准/已执行）。
 - `approve`：人工批准 `run-adaptive` 生成的方案，批准后执行 workers（阶段间串行、阶段内并行），产出工作流日志与候选复盘。
 - `apply-draft`：解析 Coder 草稿并预览 diff（dry-run，不写文件）；加 `--apply` 应用改动 → 自动跑测试 → 测试通过自动本地 commit（失败自动回滚）。只允许改 `src/`、`tests/` 下文本文件。
-- `provider`：查看当前 AI Provider 配置和可用 Provider 列表；默认显示本地模拟 Provider。
-- `webui`：启动本机网页终端（默认 http://127.0.0.1:8080），在浏览器里输入命令；页面是纯终端风格，并用树状图实时显示当前 Agent 进度。直接输入普通内容时先进入单 AI 需求讨论；点“生成主控方案”才生成方案；点“开始协同工作”才批准并执行后续 Agent；点“暂停工作”会在阶段边界保存断点并暂停；页面检测到断点后可点“继续暂停任务”从下一阶段恢复；点“强制停止”会经多重确认后立即中断后台进程但不删除 API key。
+- `provider`：查看当前 AI Provider 配置和可用 Provider 列表；默认显示本地模拟 Provider。真实 Provider 调用支持超时、429/5xx/网络临时失败重试和响应结构校验。
+- `webui`：启动本机网页终端（默认 http://127.0.0.1:8080），在浏览器里输入命令；页面是纯终端风格，并用树状图实时显示当前 Agent 进度。直接输入普通内容时先进入单 AI 需求讨论；点“生成主控方案”才生成方案；点“开始协同工作”才批准并执行后续 Agent；命令会提交为后台 job，页面轮询 job 状态和进度；点“暂停工作”会在阶段边界保存断点并暂停；页面检测到断点后可点“继续暂停任务”从下一阶段恢复；点“强制停止”会经多重确认后立即中断后台进程但不删除 API key。
 
 打包 Windows 下载包：
 
@@ -144,7 +144,7 @@ $env:AGENT_WORKBENCH_API_KEY_ENV="你的密钥环境变量名"
 - `PlannerAgent`：生成保守执行计划。
 - `CoderAgent`：生成代码草稿，只写入 `dev-vault/projects`，不直接修改正式源码；支持 `worker_label` 和 `owned_paths` 以多实例并行写独立草稿并声明职责边界；草稿按固定五小节格式输出（修改文件清单/修改原因/建议代码/测试方法/风险），可被 `apply-draft` 解析。
 - `IntegratorAgent`：合并多份 Coder 草稿，只写入 `dev-vault/projects/<任务ID>-integrated-draft.md`，不直接修改正式源码；复杂任务中位于双 Coder 和 ReviewerAgent 之间。
-- `ReviewerAgent`：规则版评审代码草稿或合并草稿（存在性 / AI 草稿正文长度 / 敏感信息 / 越权），优先评审 IntegratorAgent 的合并草稿；不通过时可触发最多一次重写。
+- `ReviewerAgent`：规则版评审代码草稿或合并草稿（存在性 / AI 草稿正文长度 / 敏感信息 / 越权 / 固定小节 / 路径范围 / 测试方法 / 冲突标记），优先评审 IntegratorAgent 的合并草稿；不通过时可触发最多一次重写。
 - `OrchestratorAgent`：半动态主控，按任务复杂度从三档预设模板选择执行方案（`run-adaptive`）。
 - `ValidatorAgent`：检查上下文包和边界。
 - `ReflectorAgent`：确认复盘进入候选区。

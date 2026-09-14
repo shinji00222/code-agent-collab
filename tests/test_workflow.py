@@ -22,7 +22,7 @@ class ShortThenGoodProvider(AIProvider):
         self.coder_calls += 1
         if self.coder_calls == 1:
             return "太短"
-        return "重写后的有效代码草稿。" * 20
+        return _valid_draft_text()
 
 
 class AlwaysShortProvider(AIProvider):
@@ -31,6 +31,22 @@ class AlwaysShortProvider(AIProvider):
     def complete(self, system_prompt: str, user_prompt: str) -> str:
         del system_prompt, user_prompt
         return "太短"
+
+
+def _valid_draft_text() -> str:
+    return """## 修改文件清单
+- src/example.py（修改）
+## 修改原因
+补充一个可验证的示例实现。
+## 建议代码
+### src/example.py
+def answer():
+    return 42
+## 测试方法
+运行 python -m unittest discover -s tests。
+## 风险
+影响范围限制在示例文件。
+"""
 
 
 class WorkflowTests(unittest.TestCase):

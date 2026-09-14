@@ -44,13 +44,13 @@ class ShortThenGoodProvider(AIProvider):
             self.integrator_calls += 1
             if self.integrator_calls == 1:
                 return "太短"
-            return "合并后的有效统一草稿。" * 20
+            return _valid_draft_text("src/integrated.py")
         if "代码实现草稿" not in user_prompt:
             return "模拟 AI 已收到任务：" + user_prompt
         self.coder_calls += 1
         if self.coder_calls <= 2:
             return "太短"
-        return "重写后的有效代码草稿。" * 20
+        return _valid_draft_text("src/example.py")
 
 
 class StaticAgent:
@@ -78,6 +78,22 @@ class FailingAgent(StaticAgent):
         del context, previous_results
         self.calls += 1
         raise RuntimeError(f"{self.name} 失败")
+
+
+def _valid_draft_text(path: str) -> str:
+    return f"""## 修改文件清单
+- {path}（修改）
+## 修改原因
+补充一个可验证的示例实现。
+## 建议代码
+### {path}
+def answer():
+    return 42
+## 测试方法
+运行 python -m unittest discover -s tests。
+## 风险
+影响范围限制在示例文件。
+"""
 
 
 def _make_project(tmp: str) -> Path:

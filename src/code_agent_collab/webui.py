@@ -9,7 +9,9 @@ import shlex
 import subprocess
 import sys
 import threading
+import uuid
 import webbrowser
+from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -1304,6 +1306,40 @@ _LEGACY_PAGE = """<!DOCTYPE html>
 PAGE = TERMINAL_PAGE
 
 _ACTIVE_PROCESSES: set[subprocess.Popen] = set()
+_JOBS_LOCK = threading.Lock()
+_JOBS: dict[str, "CommandJob"] = {}
+
+
+@dataclass
+class CommandJob:
+    id: str
+    command: str
+    args: list[str]
+    status: str = "queued"
+    code: int | None = None
+    output: str = ""
+    error: str = ""
+    created_at: str = field(default_factory=lambda: datetime_now())
+    updated_at: str = field(default_factory=lambda: datetime_now())
+
+    def to_json(self) -> dict:
+        return {
+            "job_id": self.id,
+            "command": self.command,
+            "status": self.status,
+            "code": self.code,
+            "output": self.output,
+            "error": self.error,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "done": self.status in {"done", "failed", "timeout"},
+        }
+
+
+def datetime_now() -> str:
+    from datetime import datetime
+
+    return datetime.now().isoformat(timespec="milliseconds")
 
 
 def _kill_process_tree(process: subprocess.Popen) -> None:
@@ -1401,6 +1437,46 @@ def run_cli(args: list[str], timeout: int = 180) -> tuple[int, str]:
     if stderr:
         output += "\n" + stderr
     return process.returncode, output
+
+
+def start_command_job(command: str) -> dict:
+    args = build_command(command)
+    job_id = uuid.uuid4().hex
+    job = CommandJob(id=job_id, command=command, args=args)
+    with _JOBS_LOCK:
+        _JOBS[job_id] = job
+    thread = threading.Thread(target=_run_command_job, args=(job_id,), daemon=True)
+    thread.start()
+    return job.to_json()
+
+
+def get_command_job(job_id: str) -> dict | None:
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+        return None if job is None else job.to_json()
+
+
+def _update_job(job_id: str, **updates) -> None:
+    with _JOBS_LOCK:
+        job = _JOBS[job_id]
+        for key, value in updates.items():
+            setattr(job, key, value)
+        job.updated_at = datetime_now()
+
+
+def _run_command_job(job_id: str) -> None:
+    with _JOBS_LOCK:
+        job = _JOBS[job_id]
+        args = list(job.args)
+    _update_job(job_id, status="running")
+    try:
+        code, output = run_cli(args)
+    except subprocess.TimeoutExpired:
+        _update_job(job_id, status="timeout", error="命令执行超时")
+    except Exception as exc:  # noqa: BLE001 - 后台任务需要把错误留给前端轮询
+        _update_job(job_id, status="failed", error=f"服务器错误：{exc}")
+    else:
+        _update_job(job_id, status="done" if code in {0, 3} else "failed", code=code, output=output)
 
 
 def _latest_path(folder: Path, pattern: str) -> Path | None:
@@ -1639,6 +1715,14 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/discussion":
             self._send_json(200, {"goal": build_discussion_goal()})
             return
+        if self.path.startswith("/api/jobs/"):
+            job_id = self.path.rsplit("/", 1)[-1]
+            job = get_command_job(job_id)
+            if job is None:
+                self._send_json(404, {"error": "job not found"})
+            else:
+                self._send_json(200, job)
+            return
         if self.path == "/favicon.ico":
             self.send_response(204)
             self.send_header("Content-Length", "0")
@@ -1690,6 +1774,20 @@ class Handler(BaseHTTPRequestHandler):
                     ),
                 },
             )
+            return
+
+        if self.path == "/api/jobs":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                command = str(body.get("command", "")).strip()
+                self._send_json(202, start_command_job(command))
+            except ValueError as exc:
+                self._send_json(400, {"error": str(exc)})
+            except json.JSONDecodeError:
+                self._send_json(400, {"error": "请求体不是合法 JSON"})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json(500, {"error": f"服务器错误：{exc}"})
             return
 
         if self.path != "/api/command":

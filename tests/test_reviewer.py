@@ -28,7 +28,23 @@ def _write_draft(project_root: Path, content: str) -> Path:
 
 
 def _normal_content() -> str:
-    return "# 代码草稿\n\n" + "这是一段正常代码草稿内容。" * 20
+    return """# 代码草稿
+
+## AI 草稿
+
+## 修改文件清单
+- src/example.py（修改）
+## 修改原因
+补充一个可验证的示例实现。
+## 建议代码
+### src/example.py
+def answer():
+    return 42
+## 测试方法
+运行 python -m unittest discover -s tests，并检查相关页面输出。
+## 风险
+影响范围限制在示例文件。
+"""
 
 
 class ReviewerAgentTests(unittest.TestCase):
@@ -94,6 +110,56 @@ class ReviewerAgentTests(unittest.TestCase):
             result = agent.run(_make_context(root), [])
             self.assertEqual(agent.last_verdict, "需修改")
             self.assertTrue(any("敏感信息" in reason for reason in result.outputs))
+
+    def test_missing_required_sections_marks_needs_fix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_draft(root, "# 草稿\n\n## AI 草稿\n\n只有一段说明。" + "内容" * 60)
+
+            agent = ReviewerAgent()
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "需修改")
+            self.assertTrue(any("结构不完整" in reason for reason in result.outputs))
+
+    def test_out_of_scope_path_marks_needs_fix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            content = _normal_content().replace("### src/example.py", "### product-docs/plan.md")
+            _write_draft(root, content)
+
+            agent = ReviewerAgent()
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "需修改")
+            self.assertTrue(any("路径不合规" in reason for reason in result.outputs))
+
+    def test_vague_test_method_marks_needs_fix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            content = _normal_content().replace(
+                "运行 python -m unittest discover -s tests，并检查相关页面输出。",
+                "看起来没问题。",
+            )
+            _write_draft(root, content)
+
+            agent = ReviewerAgent()
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "需修改")
+            self.assertTrue(any("测试方法过于笼统" in reason for reason in result.outputs))
+
+    def test_conflict_marker_marks_needs_fix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            content = _normal_content() + "\n<<<<<<< HEAD\n冲突\n=======\n另一版\n>>>>>>> branch\n"
+            _write_draft(root, content)
+
+            agent = ReviewerAgent()
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "需修改")
+            self.assertTrue(any("冲突标记" in reason for reason in result.outputs))
 
     def test_vault_path_reference_marks_needs_fix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

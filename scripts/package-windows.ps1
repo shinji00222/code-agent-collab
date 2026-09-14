@@ -24,6 +24,9 @@ if ((Split-Path $packageParent -Parent) -ne $distRoot) {
 
 Write-Host "==> Building executables..."
 & (Join-Path $PSScriptRoot "build-exe.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "Executable build failed with exit code $LASTEXITCODE"
+}
 
 Write-Host "==> Preparing package folder..."
 if (Test-Path -LiteralPath $packageDir) {

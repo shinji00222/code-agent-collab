@@ -1,14 +1,44 @@
 import os
 import unittest
+from urllib import error
 from unittest.mock import patch
 
 from code_agent_collab.providers import (
     MockProvider,
     OpenAICompatibleProvider,
+    ProviderCallError,
     ProviderConfig,
     ProviderConfigurationError,
     create_provider,
 )
+
+
+class FakeResponse:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.payload
+
+
+def _provider() -> OpenAICompatibleProvider:
+    return OpenAICompatibleProvider(
+        ProviderConfig(
+            name="deepseek",
+            model="deepseek-chat",
+            base_url="https://api.deepseek.com",
+            api_key_env="DEEPSEEK_API_KEY",
+            timeout_seconds=3,
+            max_retries=1,
+            retry_backoff_seconds=0,
+        )
+    )
 
 
 class ProviderTests(unittest.TestCase):
@@ -75,3 +105,37 @@ class ProviderTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(ProviderConfigurationError, "还没有配置密钥"):
                 provider.complete("system", "user")
+
+    def test_real_provider_extracts_chat_content(self) -> None:
+        payload = b'{"choices":[{"message":{"content":"ok"}}]}'
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"}, clear=True):
+            with patch("code_agent_collab.providers.request.urlopen", return_value=FakeResponse(payload)):
+                self.assertEqual(_provider().complete("system", "user"), "ok")
+
+    def test_real_provider_retries_retryable_http_error(self) -> None:
+        payload = b'{"choices":[{"message":{"content":"ok after retry"}}]}'
+        http_error = error.HTTPError(
+            url="https://api.deepseek.com/chat/completions",
+            code=429,
+            msg="Too Many Requests",
+            hdrs=None,
+            fp=None,
+        )
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"}, clear=True):
+            with patch(
+                "code_agent_collab.providers.request.urlopen",
+                side_effect=[http_error, FakeResponse(payload)],
+            ) as urlopen:
+                with patch("code_agent_collab.providers.time.sleep") as sleep:
+                    self.assertEqual(_provider().complete("system", "user"), "ok after retry")
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_real_provider_rejects_invalid_response_shape(self) -> None:
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"}, clear=True):
+            with patch(
+                "code_agent_collab.providers.request.urlopen",
+                return_value=FakeResponse(b'{"choices":[]}'),
+            ):
+                with self.assertRaisesRegex(ProviderCallError, "返回结构无效"):
+                    _provider().complete("system", "user")

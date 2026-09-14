@@ -23,8 +23,10 @@ from code_agent_collab.webui import (
     clear_discussion,
     discuss_with_orchestrator,
     force_stop_active_work,
+    get_command_job,
     resolve_project_root,
     run_cli,
+    start_command_job,
 )
 
 
@@ -73,6 +75,24 @@ class RunCliTests(unittest.TestCase):
     def test_force_stop_without_active_work_is_safe(self) -> None:
         self.assertEqual(force_stop_active_work(), 0)
 
+    def test_command_job_runs_in_background(self) -> None:
+        job = start_command_job("help")
+        self.assertIn(job["status"], {"queued", "running", "done"})
+        latest = None
+        for _ in range(30):
+            latest = get_command_job(job["job_id"])
+            if latest and latest["done"]:
+                break
+            import time
+
+            time.sleep(0.1)
+
+        assert latest is not None
+        self.assertTrue(latest["done"])
+        self.assertEqual(latest["status"], "done")
+        self.assertEqual(latest["code"], 0)
+        self.assertIn("可用命令", latest["output"])
+
 
 class PageTests(unittest.TestCase):
     def test_page_contains_task_workbench_controls(self) -> None:
@@ -99,6 +119,8 @@ class PageTests(unittest.TestCase):
         self.assertIn("强制停止", PAGE)
         self.assertIn("/api/pause", PAGE)
         self.assertIn("/api/force-stop", PAGE)
+        self.assertIn("/api/jobs", PAGE)
+        self.assertIn("pollJob", PAGE)
         self.assertIn("pauseCurrentWork", PAGE)
         self.assertIn("resumePausedWork", PAGE)
         self.assertIn("forceStopCurrentWork", PAGE)

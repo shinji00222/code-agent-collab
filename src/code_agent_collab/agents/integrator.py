@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..apply import parse_draft
 from ..file_utils import ensure_dir, write_text
 from ..providers import AIProvider, create_provider
 from .base import AgentContext, AgentResult, BaseAgent, PermissionLevel
@@ -65,6 +66,7 @@ class IntegratorAgent(BaseAgent):
                 f"{source_text}"
             ),
         )
+        integrated = _ensure_integrated_format(integrated, source_text)
         return "\n".join(
             [
                 f"# IntegratorAgent 合并草稿：{context.task_goal}",
@@ -134,5 +136,35 @@ def _render_missing_draft(context: AgentContext) -> str:
             "",
             "- 当前内容只写入 `dev-vault/projects`。",
             "- 写入正式项目文件前必须经过检查和用户确认。",
+        ]
+    )
+
+
+def _ensure_integrated_format(integrated: str, source_text: str) -> str:
+    if len(integrated.strip()) < 100:
+        return integrated
+    parsed = parse_draft(integrated)
+    if not parsed.errors:
+        return integrated
+    escaped_source = "\n".join(
+        f"    {line}" for line in source_text.replace("```", "'''").splitlines()
+    )
+    return "\n".join(
+        [
+            "## 修改文件清单",
+            "- src/integrated_plan.md（新增）",
+            "## 修改原因",
+            "Provider 输出没有形成可解析的五小节草稿，IntegratorAgent 生成安全兜底合并说明。",
+            "## 建议代码",
+            "### src/integrated_plan.md",
+            "# 合并草稿说明",
+            "",
+            "以下是待人工继续整理的 Coder 草稿内容：",
+            "",
+            escaped_source,
+            "## 测试方法",
+            "运行 python -m unittest discover -s tests，并人工检查合并草稿中的冲突和重复内容。",
+            "## 风险",
+            "这是兜底合并说明，不应直接作为最终实现应用到正式源码。",
         ]
     )
