@@ -42,7 +42,7 @@ $startHere = @"
 Agent Workbench v$version
 
 Quick start:
-1. Double-click MultiAgentWorkbench.exe to open the Web UI.
+1. Double-click MultiAgentWorkbench.exe to open the local desktop app.
 2. To configure API keys, right-click in this folder, open PowerShell, then run:
    powershell -ExecutionPolicy Bypass -File .\setup-provider.ps1
 3. In the menu:
@@ -50,13 +50,14 @@ Quick start:
    2 = Configure OpenAI API
    3 = Stop API calls and switch back to local mock
    4 = Show current provider status
-   5 = Start Web UI
+   5 = Start legacy Web UI
    6 = Exit
 
 Notes:
 - API keys are stored in Windows User environment variables.
 - API keys are not saved into this folder or the Git repository.
 - Keep MultiAgentWorkbench.exe and AgentWorkbench-CLI.exe in the same folder.
+- The desktop app does not open a browser. The legacy Web UI remains available from setup-provider.ps1 if needed.
 "@
 Set-Content -LiteralPath (Join-Path $packageDir "START_HERE.txt") -Value $startHere -Encoding UTF8
 

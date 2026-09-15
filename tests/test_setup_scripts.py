@@ -37,6 +37,7 @@ class SetupScriptTests(unittest.TestCase):
         self.assertIn("build-exe.ps1", text)
         self.assertIn("MultiAgentWorkbench.exe", text)
         self.assertIn("AgentWorkbench-CLI.exe", text)
+        self.assertIn("local desktop app", text)
         self.assertIn("setup-provider.ps1", text)
         self.assertIn("Compress-Archive", text)
         self.assertIn("START_HERE.txt", text)
