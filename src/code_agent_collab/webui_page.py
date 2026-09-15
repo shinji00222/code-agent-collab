@@ -71,7 +71,7 @@ PAGE = """<!DOCTYPE html>
   .screen {
     min-height: 0;
     overflow: auto;
-    padding: 22px 24px 36px;
+    padding: 22px 24px 112px;
   }
   .transcript {
     max-width: 1160px;
@@ -101,7 +101,7 @@ PAGE = """<!DOCTYPE html>
   }
   .tree-canvas {
     position: relative;
-    min-height: 470px;
+    min-height: 620px;
     padding: 4px 0 12px;
   }
   .tree-node {
@@ -310,6 +310,9 @@ PAGE = """<!DOCTYPE html>
   }
   .branch-child.has-children {
     min-height: 96px;
+  }
+  .tree-node.has-children {
+    min-height: 156px;
   }
   .join {
     display: none;
@@ -744,7 +747,7 @@ PAGE = """<!DOCTYPE html>
   }
 
   function roleName(node) {
-    if (node.role) return String(node.role);
+    if (node.role) return String(node.role).replace(/\\(.+\\)$/, "");
     const label = String(node.label || "");
     if (label === "人工审批") return "ApprovalGate";
     return label.replace(/\\(.+\\)$/, "");
