@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from code_agent_collab.apply import (
     DraftChange,
@@ -12,6 +14,7 @@ from code_agent_collab.apply import (
     find_draft_path,
     generate_diffs,
     parse_draft,
+    run_tests,
     validate_changes,
 )
 from code_agent_collab.file_utils import write_text
@@ -163,7 +166,7 @@ class ApplyDraftTests(unittest.TestCase):
             # 文件未被修改
             self.assertIn("test_ok", (root / "tests" / "test_sample.py").read_text(encoding="utf-8"))
 
-    def test_apply_with_failing_tests_rolls_back(self) -> None:
+    def test_apply_with_failing_isolated_tests_does_not_write_formal_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_project(tmp)
             (root / "tests" / "test_sample.py").write_text(PASS_TEST, encoding="utf-8")
@@ -172,8 +175,8 @@ class ApplyDraftTests(unittest.TestCase):
             result = apply_draft_workflow(root, draft_path, apply=True)
 
             self.assertFalse(result.ok)
-            self.assertEqual(result.stage, "测试")
-            # 已回滚：文件恢复为通过版
+            self.assertEqual(result.stage, "隔离测试")
+            # 隔离副本失败，正式文件从未被写入
             self.assertIn("test_ok", (root / "tests" / "test_sample.py").read_text(encoding="utf-8"))
 
     def test_apply_with_passing_tests_commits(self) -> None:
@@ -246,6 +249,27 @@ class ApplyDraftTests(unittest.TestCase):
             diffs = generate_diffs(root, [DraftChange("src/new.py", "print(1)\n")])
             self.assertEqual(len(diffs), 1)
             self.assertIn("src/new.py", diffs[0][0])
+
+    def test_run_tests_strips_sensitive_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            write_text(
+                root / "tests" / "test_env.py",
+                """import os
+import unittest
+
+
+class EnvTests(unittest.TestCase):
+    def test_secret_env_is_absent(self) -> None:
+        self.assertNotIn("DEEPSEEK_API_KEY", os.environ)
+        self.assertEqual(os.environ.get("AGENT_WORKBENCH_PROVIDER"), "mock")
+""",
+            )
+
+            with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key", "AGENT_WORKBENCH_PROVIDER": "deepseek"}):
+                code, output = run_tests(root)
+
+            self.assertEqual(code, 0, output)
 
 
 if __name__ == "__main__":

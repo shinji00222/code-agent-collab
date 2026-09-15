@@ -3,8 +3,10 @@ from __future__ import annotations
 import difflib
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -23,6 +25,29 @@ SECTION_TEST = "## 测试方法"
 SECTION_RISK = "## 风险"
 
 DRAFT_GLOB = "*-coder-draft*.md"
+TEST_TIMEOUT_SECONDS = 120
+TRIAL_COPY_EXCLUDE_DIRS = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    "__pycache__",
+    "build",
+    "dist",
+    "logs",
+    "dev-vault",
+}
+SENSITIVE_ENV_TOKENS = (
+    "api_key",
+    "apikey",
+    "authorization",
+    "auth",
+    "cookie",
+    "credential",
+    "passwd",
+    "password",
+    "secret",
+    "token",
+)
 
 
 @dataclass(frozen=True)
@@ -305,20 +330,62 @@ def git_is_clean(project_root: Path) -> bool:
     return not git_status_porcelain(project_root)
 
 
-def run_tests(project_root: Path) -> tuple[int, str]:
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(project_root / "src")
-    result = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
-        cwd=project_root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-    )
+def run_tests(project_root: Path, timeout_seconds: int = TEST_TIMEOUT_SECONDS) -> tuple[int, str]:
+    env = _test_env(project_root)
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+            cwd=project_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = (exc.stdout or "") + (exc.stderr or "")
+        return 124, f"测试超时（>{timeout_seconds} 秒），已终止测试进程。\n{output[-2000:]}"
     return result.returncode, (result.stdout + result.stderr)
+
+
+def _test_env(project_root: Path) -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not _is_sensitive_env_item(key, value)
+    }
+    env["PYTHONPATH"] = str(project_root / "src")
+    env["AGENT_WORKBENCH_PROVIDER"] = "mock"
+    for key in ("AGENT_WORKBENCH_API_KEY_ENV", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
+        env.pop(key, None)
+    return env
+
+
+def _is_sensitive_env_item(key: str, value: str) -> bool:
+    lowered = key.lower()
+    if any(token in lowered for token in SENSITIVE_ENV_TOKENS):
+        return True
+    if re.search(r"sk-[A-Za-z0-9]{12,}", value):
+        return True
+    return False
+
+
+def _run_isolated_tests(project_root: Path, changes: list[DraftChange]) -> tuple[int, str]:
+    with tempfile.TemporaryDirectory(prefix="agent-workbench-apply-") as tmp:
+        trial_root = Path(tmp) / project_root.name
+        shutil.copytree(project_root, trial_root, ignore=_ignore_trial_copy)
+        _apply_changes(trial_root, changes)
+        return run_tests(trial_root)
+
+
+def _ignore_trial_copy(directory: str, names: list[str]) -> set[str]:
+    ignored: set[str] = set()
+    for name in names:
+        if name in TRIAL_COPY_EXCLUDE_DIRS:
+            ignored.add(name)
+    return ignored
 
 
 def git_commit(project_root: Path, message: str) -> tuple[bool, str]:
@@ -437,14 +504,24 @@ def apply_draft_workflow(project_root: Path, draft_path: Path, apply: bool) -> A
             diffs=diffs,
         )
 
+    code, output = _run_isolated_tests(project_root, parsed.changes)
+    if code != 0:
+        return ApplyResult(
+            ok=False,
+            stage="隔离测试",
+            message=f"隔离副本测试失败（退出码 {code}），正式源码未被写入。\n{output[-2000:]}",
+            changes=parsed.changes,
+            diffs=diffs,
+        )
+
     backup = _apply_changes(project_root, parsed.changes)
     code, output = run_tests(project_root)
     if code != 0:
         _rollback_changes(project_root, backup)
         return ApplyResult(
             ok=False,
-            stage="测试",
-            message=f"测试失败（退出码 {code}），已自动回滚改动。\n{output[-2000:]}",
+            stage="正式测试",
+            message=f"正式工作区测试失败（退出码 {code}），已自动回滚改动。\n{output[-2000:]}",
             changes=parsed.changes,
             diffs=diffs,
         )
