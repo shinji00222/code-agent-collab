@@ -42,7 +42,7 @@ $startHere = @"
 Agent Workbench v$version
 
 Quick start:
-1. Double-click MultiAgentWorkbench.exe to open the original Web UI.
+1. Double-click MultiAgentWorkbench.exe to open the local app window with the original Web UI embedded.
 2. To configure API keys, right-click in this folder, open PowerShell, then run:
    powershell -ExecutionPolicy Bypass -File .\setup-provider.ps1
 3. In the menu:
@@ -57,7 +57,7 @@ Notes:
 - API keys are stored in Windows User environment variables.
 - API keys are not saved into this folder or the Git repository.
 - Keep MultiAgentWorkbench.exe and AgentWorkbench-CLI.exe in the same folder.
-- MultiAgentWorkbench.exe opens the same local Web UI used during development.
+- MultiAgentWorkbench.exe embeds the same local Web UI used during development. It should not open a browser tab.
 "@
 Set-Content -LiteralPath (Join-Path $packageDir "START_HERE.txt") -Value $startHere -Encoding UTF8
 

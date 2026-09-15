@@ -1,5 +1,5 @@
 # Build Multi-Agent Workbench as Windows executables (PyInstaller)
-# Artifacts: dist/MultiAgentWorkbench.exe (Web UI) + dist/AgentWorkbench-CLI.exe (CLI)
+# Artifacts: dist/MultiAgentWorkbench.exe (WebView UI) + dist/AgentWorkbench-CLI.exe (CLI)
 # Usage: pwsh -File scripts/build-exe.ps1   (or PowerShell 7)
 # NOTE: keep this file pure ASCII - Windows PowerShell 5.1 misreads UTF-8 Chinese.
 $ErrorActionPreference = "Stop"
@@ -12,11 +12,15 @@ python -m PyInstaller --noconfirm --onefile --console `
     --distpath dist --workpath build --specpath build `
     --paths src scripts/launcher_cli.py
 
-Write-Host "==> Building Web UI (MultiAgentWorkbench.exe) ..."
+Write-Host "==> Building WebView UI (MultiAgentWorkbench.exe) ..."
 python -m PyInstaller --noconfirm --onefile --windowed `
     --name MultiAgentWorkbench `
     --distpath dist --workpath build --specpath build `
-    --paths src scripts/launcher_webui.py
+    --paths src `
+    --collect-all webview `
+    --collect-all clr_loader `
+    --hidden-import webview.platforms.edgechromium `
+    scripts/launcher_webview.py
 
 Write-Host "==> Done. Artifacts:"
 Get-ChildItem dist | Select-Object Name, Length, LastWriteTime
