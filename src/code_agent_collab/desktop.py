@@ -7,10 +7,12 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import json
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
 from .control import request_pause
+from .progress import read_progress
 
 APP_TITLE = "多Agent工作台"
 CLI_EXE_NAME = "AgentWorkbench-CLI.exe"
@@ -104,6 +106,69 @@ def extract_task_id(output: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def load_recent_plans(project_root: Path, limit: int = 8) -> list[dict[str, str]]:
+    plans_dir = project_root / "logs" / "plans"
+    if not plans_dir.exists():
+        return []
+    rows: list[dict[str, str]] = []
+    for path in sorted(plans_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        task_id = str(payload.get("task_id") or path.stem)
+        rows.append(
+            {
+                "task_id": task_id,
+                "status": str(payload.get("status") or "unknown"),
+                "goal": str(payload.get("goal") or ""),
+                "complexity": str(payload.get("complexity") or ""),
+                "worker_count": str(payload.get("worker_count") or ""),
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def flatten_progress_nodes(nodes: list[dict]) -> list[str]:
+    lines: list[str] = []
+
+    def visit(item: dict, indent: str = "") -> None:
+        if item.get("kind") == "branch":
+            for child in item.get("children", []):
+                if isinstance(child, dict):
+                    visit(child, indent + "  ")
+            return
+        label = str(item.get("label") or item.get("role") or "Agent")
+        status = str(item.get("status") or "idle")
+        detail = str(item.get("detail") or "")
+        suffix = f" - {detail}" if detail else ""
+        lines.append(f"{indent}{label}: {status}{suffix}")
+
+    for node in nodes:
+        if isinstance(node, dict):
+            visit(node)
+    return lines
+
+
+def progress_text(project_root: Path) -> str:
+    payload = read_progress(project_root)
+    if not payload:
+        return "暂无运行进度。"
+    header = [
+        f"任务ID：{payload.get('task_id', '未知')}",
+        f"状态：{payload.get('status', '未知')}",
+        f"说明：{payload.get('detail', '')}",
+        f"更新时间：{payload.get('updated_at', '')}",
+    ]
+    nodes = flatten_progress_nodes(payload.get("nodes", []))
+    if nodes:
+        header.append("")
+        header.extend(nodes)
+    return "\n".join(header)
+
+
 class DesktopApp:
     def __init__(self, root: tk.Tk, project_root: Path = PROJECT_ROOT) -> None:
         self.root = root
@@ -117,21 +182,24 @@ class DesktopApp:
         self.status_var = tk.StringVar(value="空闲")
         self.provider_var = tk.StringVar(value="Provider：检查中...")
         self.task_var = tk.StringVar(value="任务ID：暂无")
+        self.progress_var = tk.StringVar(value="暂无运行进度。")
 
         self.root.title(APP_TITLE)
-        self.root.geometry("1020x680")
-        self.root.minsize(860, 560)
+        self.root.geometry("1180x720")
+        self.root.minsize(980, 620)
         self._build_ui()
+        self.refresh_workspace()
         self._poll_output()
         self.run_command(["provider"], label="检查 Provider")
 
     def _build_ui(self) -> None:
         self.root.columnconfigure(0, weight=0)
         self.root.columnconfigure(1, weight=1)
+        self.root.columnconfigure(2, weight=0)
         self.root.rowconfigure(1, weight=1)
 
         header = ttk.Frame(self.root, padding=(12, 10))
-        header.grid(row=0, column=0, columnspan=2, sticky="ew")
+        header.grid(row=0, column=0, columnspan=3, sticky="ew")
         header.columnconfigure(1, weight=1)
         ttk.Label(header, text=APP_TITLE, font=("Microsoft YaHei UI", 16, "bold")).grid(row=0, column=0, sticky="w")
         ttk.Label(header, textvariable=self.provider_var).grid(row=0, column=1, sticky="e")
@@ -147,6 +215,7 @@ class DesktopApp:
 
         buttons = [
             ("刷新 Provider", lambda: self.run_command(["provider"], label="刷新 Provider")),
+            ("查看方案列表", lambda: self.run_command(["plans"], label="查看方案列表")),
             ("生成主控方案", self.generate_plan),
             ("开始协同工作", self.approve_latest),
             ("暂停工作", self.pause_work),
@@ -155,17 +224,12 @@ class DesktopApp:
         for index, (text, command) in enumerate(buttons, start=2):
             ttk.Button(controls, text=text, command=command).grid(row=index, column=0, sticky="ew", pady=4)
 
-        ttk.Separator(controls).grid(row=7, column=0, sticky="ew", pady=10)
-        ttk.Label(controls, textvariable=self.status_var).grid(row=8, column=0, sticky="w", pady=(0, 6))
-        ttk.Label(controls, textvariable=self.task_var, wraplength=240).grid(row=9, column=0, sticky="w")
-        ttk.Label(
-            controls,
-            text="说明：这是本地桌面窗口。后台仍复用现有 Agent/CLI，不打开浏览器。",
-            wraplength=240,
-            foreground="#555555",
-        ).grid(row=10, column=0, sticky="w", pady=(16, 0))
+        ttk.Separator(controls).grid(row=8, column=0, sticky="ew", pady=10)
+        ttk.Label(controls, textvariable=self.status_var).grid(row=9, column=0, sticky="w", pady=(0, 6))
+        ttk.Label(controls, textvariable=self.task_var, wraplength=240).grid(row=10, column=0, sticky="w")
+        ttk.Button(controls, text="刷新工作台状态", command=self.refresh_workspace).grid(row=11, column=0, sticky="ew", pady=(16, 4))
 
-        log_frame = ttk.Frame(self.root, padding=(4, 4, 12, 12))
+        log_frame = ttk.Frame(self.root, padding=(4, 4, 8, 12))
         log_frame.grid(row=1, column=1, sticky="nsew")
         log_frame.rowconfigure(1, weight=1)
         log_frame.columnconfigure(0, weight=1)
@@ -173,6 +237,26 @@ class DesktopApp:
         self.log = scrolledtext.ScrolledText(log_frame, wrap="word", font=("Consolas", 10), height=24)
         self.log.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
         self.log.configure(state="disabled")
+
+        side = ttk.Frame(self.root, padding=(4, 4, 12, 12), width=300)
+        side.grid(row=1, column=2, sticky="nsew")
+        side.rowconfigure(1, weight=1)
+        side.rowconfigure(4, weight=1)
+        side.columnconfigure(0, weight=1)
+
+        ttk.Label(side, text="最近主控方案").grid(row=0, column=0, sticky="w")
+        self.plan_tree = ttk.Treeview(side, columns=("status", "goal"), show="headings", height=8)
+        self.plan_tree.heading("status", text="状态")
+        self.plan_tree.heading("goal", text="任务")
+        self.plan_tree.column("status", width=78, stretch=False)
+        self.plan_tree.column("goal", width=220, stretch=True)
+        self.plan_tree.grid(row=1, column=0, sticky="nsew", pady=(4, 10))
+        self.plan_tree.bind("<<TreeviewSelect>>", self._select_recent_plan)
+
+        ttk.Label(side, text="运行进度").grid(row=2, column=0, sticky="w")
+        self.progress = scrolledtext.ScrolledText(side, wrap="word", font=("Consolas", 9), height=12)
+        self.progress.grid(row=4, column=0, sticky="nsew", pady=(4, 0))
+        self.progress.configure(state="disabled")
 
     def generate_plan(self) -> None:
         goal = self.goal_var.get().strip()
@@ -213,6 +297,38 @@ class DesktopApp:
         self.current_thread = thread
         thread.start()
 
+    def refresh_workspace(self) -> None:
+        self._refresh_recent_plans()
+        self._set_progress_text(progress_text(self.project_root))
+
+    def _refresh_recent_plans(self) -> None:
+        for item in self.plan_tree.get_children():
+            self.plan_tree.delete(item)
+        for plan in load_recent_plans(self.project_root):
+            goal = plan["goal"]
+            if len(goal) > 42:
+                goal = goal[:39] + "..."
+            self.plan_tree.insert(
+                "",
+                "end",
+                iid=plan["task_id"],
+                values=(plan["status"], goal),
+            )
+
+    def _select_recent_plan(self, _event: tk.Event) -> None:
+        selected = self.plan_tree.selection()
+        if not selected:
+            return
+        task_id = selected[0]
+        self.latest_task_id = task_id
+        self.task_var.set(f"任务ID：{task_id}")
+
+    def _set_progress_text(self, text: str) -> None:
+        self.progress.configure(state="normal")
+        self.progress.delete("1.0", "end")
+        self.progress.insert("end", text)
+        self.progress.configure(state="disabled")
+
     def _run_command_worker(self, args: list[str], label: str) -> None:
         command = cli_command(desktop_cli_args(args, self.project_root))
         try:
@@ -244,6 +360,7 @@ class DesktopApp:
         status = "完成" if code == 0 else f"失败（退出码 {code}）"
         self.output_queue.put(("log", output))
         self.output_queue.put(("done", f"{label}：{status}"))
+        self.output_queue.put(("refresh", ""))
 
     def _poll_output(self) -> None:
         while True:
@@ -262,6 +379,8 @@ class DesktopApp:
                 self.busy = False
                 self.status_var.set(value)
                 self._append_log(f"[{value}]\n")
+            elif kind == "refresh":
+                self.refresh_workspace()
         self.root.after(100, self._poll_output)
 
     def _append_log(self, text: str) -> None:
