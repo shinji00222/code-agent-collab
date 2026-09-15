@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import difflib
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .config import load_config
 from .file_utils import read_text, write_text
+from .review import scan_sensitive
 
 # apply-draft 允许写入的目录（相对项目根）；其他区域一律拒绝
 ALLOWED_DIRS = ("src", "tests")
@@ -33,6 +36,7 @@ class DraftChange:
 @dataclass(frozen=True)
 class ParseResult:
     changes: list[DraftChange]
+    declared_paths: list[str]
     reason: str
     test_method: str
     risk: str
@@ -92,12 +96,39 @@ def _code_blocks(section: str) -> list[DraftChange]:
     return changes
 
 
+def _normalize_draft_path(path: str) -> str:
+    normalized = path.strip().strip("`").replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def _declared_file_paths(section: str) -> list[str]:
+    """解析"修改文件清单"小节中的相对路径。"""
+    paths: list[str] = []
+    for line in section.splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        text = re.sub(r"^[-*]\s*", "", text)
+        text = re.sub(r"^\d+[.)、]\s*", "", text)
+        if text.startswith("`") and "`" in text[1:]:
+            candidate = text.split("`", 2)[1]
+        else:
+            candidate = re.split(r"\s|（|\(|：|:", text, maxsplit=1)[0]
+        candidate = _normalize_draft_path(candidate)
+        if candidate and candidate not in paths:
+            paths.append(candidate)
+    return paths
+
+
 def parse_draft(content: str) -> ParseResult:
     """解析规范化的 Coder 草稿，提取各文件改动与说明小节。"""
     errors: list[str] = []
     files_section = _section(content, SECTION_FILES)
     if not files_section:
         errors.append(f"缺少小节 {SECTION_FILES}")
+    declared_paths = _declared_file_paths(files_section) if files_section else []
     reason = _section(content, SECTION_REASON)
     if not reason:
         errors.append(f"缺少小节 {SECTION_REASON}")
@@ -112,8 +143,17 @@ def parse_draft(content: str) -> ParseResult:
     changes = _code_blocks(code_section) if code_section else []
     if not changes:
         errors.append(f"{SECTION_CODE} 下没有找到任何 ### <路径> 代码块")
+    actual_paths = [_normalize_draft_path(change.path) for change in changes]
+    if declared_paths and actual_paths:
+        missing_code = sorted(set(declared_paths) - set(actual_paths))
+        undeclared_code = sorted(set(actual_paths) - set(declared_paths))
+        if missing_code:
+            errors.append("修改文件清单列出但建议代码缺少：" + "、".join(missing_code))
+        if undeclared_code:
+            errors.append("建议代码包含未在修改文件清单声明的路径：" + "、".join(undeclared_code))
     return ParseResult(
         changes=changes,
+        declared_paths=declared_paths,
         reason=reason,
         test_method=test_method,
         risk=risk,
@@ -142,6 +182,90 @@ def validate_changes(project_root: Path, changes: list[DraftChange]) -> list[str
             errors.append(f"路径越界：{change.path}")
             continue
     return errors
+
+
+def review_apply_gate(project_root: Path, draft_path: Path, content: str, parsed: ParseResult) -> list[str]:
+    """应用草稿前的硬闸门：复用 Reviewer 的关键规则，避免不合格草稿落盘。"""
+    errors: list[str] = []
+    draft_body = _extract_ai_draft_body(content)
+    stripped_len = len(draft_body.strip())
+    if stripped_len < 100:
+        errors.append(f"草稿内容过短（{stripped_len} 字符 < 100），疑似空草稿")
+
+    sensitive = scan_sensitive(content)
+    if sensitive:
+        errors.append("检测到敏感信息：" + "、".join(sensitive))
+
+    vault = Path(load_config(project_root).main_vault_path)
+    if _mentions_main_vault_outside_project(content, vault, project_root):
+        errors.append("草稿内容引用了项目外的主知识库路径，疑似越权")
+
+    if parsed.test_method and not _has_concrete_test_method(parsed.test_method):
+        errors.append("测试方法过于笼统，需写明具体命令或检查点")
+
+    if _has_unresolved_conflict_marker(draft_body):
+        errors.append("草稿包含未解决冲突标记")
+
+    if draft_path.name.endswith("-integrated-draft.md"):
+        return errors
+    if "-coder-draft" not in draft_path.name:
+        errors.append("草稿文件名不是 Coder/Integrator 标准草稿，拒绝应用")
+    return errors
+
+
+def _extract_ai_draft_body(content: str) -> str:
+    marker = "## AI 草稿"
+    if marker not in content:
+        return content
+    body = content.split(marker, 1)[1]
+    for boundary in ("\n## 安全边界", "\n## 输入草稿", "\n## Reviewer 反馈"):
+        if boundary in body:
+            body = body.split(boundary, 1)[0]
+    return body
+
+
+def _mentions_main_vault_outside_project(content: str, vault: Path, project_root: Path) -> bool:
+    vault_forms = _path_forms(vault)
+    project_forms = _path_forms(project_root)
+    for line in content.splitlines():
+        normalized = line.lower()
+        if any(vault_form in normalized for vault_form in vault_forms) and not any(
+            project_form in normalized for project_form in project_forms
+        ):
+            return True
+    return False
+
+
+def _path_forms(path: Path) -> tuple[str, str]:
+    raw = str(path).lower()
+    return raw, path.as_posix().lower()
+
+
+def _has_concrete_test_method(test_method: str) -> bool:
+    text = test_method.lower()
+    concrete_tokens = (
+        "python",
+        "pytest",
+        "unittest",
+        "npm",
+        "pnpm",
+        "node",
+        "pwsh",
+        "powershell",
+        "curl",
+        "http",
+        "点击",
+        "打开",
+        "检查",
+        "验证",
+        "运行",
+        "命令",
+    )
+    return any(token in text for token in concrete_tokens)
+
+
+def _has_unresolved_conflict_marker(content: str) -> bool:
+    return any(marker in content for marker in ("<<<<<<<", "=======", ">>>>>>>"))
 
 
 def generate_diffs(project_root: Path, changes: list[DraftChange]) -> list[tuple[str, str]]:
@@ -232,6 +356,16 @@ def find_draft_path(project_root: Path, task: str) -> Path:
     direct = projects_dir / f"{task}-coder-draft.md"
     if direct.exists():
         return direct
+    integrated_direct = projects_dir / f"{task}-integrated-draft.md"
+    if integrated_direct.exists():
+        return integrated_direct
+    integrated_matches = sorted(
+        projects_dir.glob(f"*{task}*integrated-draft.md"),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
+    if integrated_matches:
+        return integrated_matches[0]
     matches = sorted(
         projects_dir.glob(f"*{task}*coder-draft*.md"),
         key=lambda item: item.stat().st_mtime,
@@ -277,6 +411,9 @@ def apply_draft_workflow(project_root: Path, draft_path: Path, apply: bool) -> A
     errors = validate_changes(project_root, parsed.changes)
     if errors:
         return ApplyResult(ok=False, stage="校验", message="；".join(errors))
+    review_errors = review_apply_gate(project_root, draft_path, content, parsed)
+    if review_errors:
+        return ApplyResult(ok=False, stage="评审闸门", message="；".join(review_errors))
 
     diffs = generate_diffs(project_root, parsed.changes)
     if not apply:

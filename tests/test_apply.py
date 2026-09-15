@@ -80,6 +80,7 @@ class ParseDraftTests(unittest.TestCase):
         draft = _make_draft({"tests/test_sample.py": PASS_TEST, "src/demo.py": "print('hi')\n"})
         result = parse_draft(draft)
         self.assertEqual(result.errors, [])
+        self.assertEqual(result.declared_paths, ["tests/test_sample.py", "src/demo.py"])
         self.assertEqual(len(result.changes), 2)
         self.assertEqual(result.changes[0].path, "tests/test_sample.py")
         self.assertIn("class SampleTests", result.changes[0].content)
@@ -91,6 +92,34 @@ class ParseDraftTests(unittest.TestCase):
         result = parse_draft("# 只有标题\n\n随便写点东西")
         self.assertTrue(result.errors)
         self.assertEqual(result.changes, [])
+
+    def test_parse_rejects_file_list_and_code_path_mismatch(self) -> None:
+        draft = "\n".join(
+            [
+                "# CoderAgent 草稿：测试任务",
+                "",
+                "## 修改文件清单",
+                "- src/declared.py（修改）",
+                "",
+                "## 修改原因",
+                "测试原因。",
+                "",
+                "## 建议代码",
+                "### src/actual.py",
+                "print('actual')",
+                "",
+                "## 测试方法",
+                "运行 python -m unittest discover -s tests。",
+                "",
+                "## 风险",
+                "低风险。",
+            ]
+        )
+
+        result = parse_draft(draft)
+
+        self.assertIn("修改文件清单列出但建议代码缺少：src/declared.py", result.errors)
+        self.assertIn("建议代码包含未在修改文件清单声明的路径：src/actual.py", result.errors)
 
 
 class ValidateTests(unittest.TestCase):
@@ -181,12 +210,35 @@ class ApplyDraftTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.stage, "前置检查")
 
+    def test_apply_rejects_draft_that_fails_review_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            content = PASS_TEST + "\n<<<<<<< HEAD\nsecret = 'sk-1234567890123456'\n>>>>>>> branch\n"
+            draft_path = _write_draft(root, _make_draft({"tests/test_sample.py": content}))
+
+            result = apply_draft_workflow(root, draft_path, apply=True)
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.stage, "评审闸门")
+            self.assertIn("敏感信息", result.message)
+            self.assertIn("冲突标记", result.message)
+
     def test_find_draft_path_by_keyword(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_project(tmp)
             draft_path = _write_draft(root, "# 草稿")
             found = find_draft_path(root, "任务A")
             self.assertEqual(found, draft_path)
+
+    def test_find_draft_path_prefers_integrated_draft(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            _write_draft(root, "# Coder 草稿", name="20260101-000000-任务C-coder-draft.md")
+            integrated = _write_draft(root, "# 合并草稿", name="20260101-000000-任务C-integrated-draft.md")
+
+            found = find_draft_path(root, "任务C")
+
+            self.assertEqual(found, integrated)
 
     def test_generate_diffs_new_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
