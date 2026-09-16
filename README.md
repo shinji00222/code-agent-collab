@@ -9,9 +9,41 @@
 
 ## 当前版本
 
-当前版本：`v0.14.5`（稳定验收版）
+当前版本：`v0.15.0`（开发版）
 
-阶段定位：主知识库只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + WebView 本地软件窗口 + 草稿应用实验能力。
+阶段定位：主知识库只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + WebView 本地软件窗口 + 草稿应用实验能力 + **MCP 工具接入**。
+
+## MCP 工具接入（v0.15.0 新增）
+
+工作台可以连接 MCP（Model Context Protocol）服务端，把外部工具交给 Agent 使用。
+
+配置（二选一，环境变量优先）：
+
+```jsonc
+// .agent-workbench/config.json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "C:/data"],
+      "timeoutSeconds": 15
+    }
+  }
+}
+```
+
+```powershell
+$env:AGENT_WORKBENCH_MCP_SERVERS = '{"filesystem":{"command":["npx","-y","@modelcontextprotocol/server-filesystem","C:/data"]}}'
+```
+
+用法：
+
+```bash
+agent-workbench mcp list                                  # 看连上了哪些服务端、有哪些工具
+agent-workbench mcp call filesystem.read_file --args-json '{"path":"C:/data/a.txt"}'
+agent-workbench mcp ask "帮我看看这个目录里有什么"        # 让 AI 带着工具回答
+```
+
+说明：MCP 客户端是本项目自研的（标准库实现，不引入官方 SDK 及其 pydantic/anyio/httpx 依赖链）；工具循环走文本协议，不要求模型支持原生 function calling。跑测试用 `python scripts/run-tests.py`。
 
 当前版本已接入 Provider 接口：默认使用本地模拟 Provider；配置 DeepSeek 或 OpenAI 后，PlannerAgent、CoderAgent 和 IntegratorAgent 可以调用真实模型生成计划、代码草稿与合并草稿；ReviewerAgent 在 CoderAgent/IntegratorAgent 之后做规则版评审（检查草稿是否存在、AI 草稿正文是否太空、敏感信息、越权），不通过时最多打回 CoderAgent 重写一次，复杂任务会重新经过 IntegratorAgent 合并，再交给 ReviewerAgent 复审；OrchestratorAgent 按任务复杂度从三档预设模板选择执行方案（`run-adaptive` 命令，阶段内并行），简单/中等方案仍是 Coder 后评审，复杂方案默认是 KnowledgeAgent → 实现/测试双 Coder → IntegratorAgent → ReviewerAgent；复杂任务默认把并行 Coder 拆成“实现”和“测试”两类职责，并在 `WorkerSpec.owned_paths` 中记录各自负责路径，执行前会拦截同阶段职责路径重叠的 worker，避免分工模糊时硬并行；阶段内 worker 会写入 `logs/runs/<任务ID>/workers.json` 状态账本，记录每个子 Agent 的执行状态、输出、错误和尝试次数，失败重跑时会跳过同输入下已成功的 worker；执行计划和每个 worker 的运行状态还会写入共享黑板 `logs/blackboards/<任务ID>.json`，记录 Agent 的职责、负责路径、状态、输出路径、阻塞和备注，并由 `/api/progress` 返回；Web 终端进度树支持点击 Agent 节点打开详情面板，查看 blackboard 中的职责、状态、输出、阻塞和备注；运行进度会同时写兼容用的 `logs/progress/current.json`、任务专属的 `logs/progress/<任务ID>.json` 和最近任务指针 `logs/progress/latest.json`；`plans` 可查看已保存方案是待批准还是已执行；Web 终端改为纯黑底终端页，实时轮询 `/api/progress`，用紫色显示已走过和当前节点，用黑灰色显示未到达节点，并显示 Orchestrator、CoderAgent、IntegratorAgent、ReviewerAgent、Fix Loop、Done 的流程进度。Web 终端默认是单 AI 需求讨论模式：直接输入普通内容时先由 OrchestratorAgent 前置讨论员追问和澄清；点击“生成主控方案”后才把讨论内容整理成 `run-adaptive` 方案；点击“开始协同工作”后才批准最近方案并执行 KnowledgeAgent、CoderAgent、IntegratorAgent、ReviewerAgent 等后续 Agent；执行中可点“暂停工作”请求阶段边界暂停并保存断点；页面检测到断点后会启用“继续暂停任务”，继续执行同一任务的下一阶段；经多重确认点“强制停止”可及时中断后台进程，且不会删除 API key，停用或更换 key 仍通过配置脚本处理。KnowledgeAgent 会从主知识库只读检索与任务相关的文档，生成知识补充文件，供后续 Agent 使用；候选知识经 AI 审查后只标记"待人工确认"，由用户 `confirm` 确认后才写入主知识库，命中敏感信息的转人工处理。`apply-draft` 处于实验阶段，可预览 Coder/Integrator 草稿 diff；草稿必须让“修改文件清单”和“建议代码”路径一致，并通过敏感信息、越权、测试方法和冲突标记等评审闸门后，显式 `--apply` 会先在临时隔离副本测试，通过后才写入正式项目、正式测试、失败回滚、通过后本地提交。
 

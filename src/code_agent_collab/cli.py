@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -9,6 +10,14 @@ from .config import save_default_config
 from .control import WorkflowPaused
 from .context_pack import create_context_pack
 from .demo import run_demo
+from .mcp_bridge import (
+    ENV_SERVERS,
+    McpConfigError,
+    McpError,
+    McpToolRegistry,
+    load_server_specs,
+    run_tool_loop,
+)
 from .orchestration import create_adaptive_plan, execute_adaptive_plan, list_adaptive_plans
 from .apply import apply_draft_workflow, find_draft_path
 from .reflection import create_reflection, list_pending_notes
@@ -160,7 +169,128 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers.add_parser("provider", help="Show the active AI provider configuration.")
+
+    mcp_parser = subparsers.add_parser("mcp", help="MCP 工具：列出、调用，或让 AI 带着工具回答。")
+    mcp_sub = mcp_parser.add_subparsers(dest="mcp_command", required=True)
+
+    # 注意：argparse 的子解析器不继承父级的可选参数，而且父级默认值会覆盖子级取值。
+    # 所以 --project-root 必须定义在每个子子命令上，不能只挂在 mcp 上。
+    mcp_list = mcp_sub.add_parser("list", help="列出已配置的 MCP 服务端与可用工具。")
+    mcp_list.add_argument("--project-root", default=".", help="Project root. Defaults to current directory.")
+
+    mcp_call = mcp_sub.add_parser("call", help="直接调用一个 MCP 工具。")
+    mcp_call.add_argument("tool", help="工具限定名，例如 filesystem.read_file。")
+    mcp_call.add_argument(
+        "--args-json",
+        default="{}",
+        help='工具入参，JSON 对象字符串，例如 \'{"text": "hi"}\'。',
+    )
+    mcp_call.add_argument("--project-root", default=".", help="Project root. Defaults to current directory.")
+
+    mcp_ask = mcp_sub.add_parser("ask", help="让 AI 带着 MCP 工具回答一个问题。")
+    mcp_ask.add_argument("prompt", help="要问 AI 的问题或任务。")
+    mcp_ask.add_argument(
+        "--max-rounds",
+        type=int,
+        default=3,
+        help="工具调用循环的最大轮数，默认 3。",
+    )
+    mcp_ask.add_argument("--project-root", default=".", help="Project root. Defaults to current directory.")
     return parser
+
+
+def _run_mcp_command(args, project_root: Path) -> int:
+    try:
+        specs = load_server_specs(project_root)
+    except McpConfigError as exc:
+        print(f"MCP 配置有误：{exc}")
+        return 2
+
+    if args.mcp_command == "ask":
+        return _run_mcp_ask(args, specs)
+
+    if not specs:
+        print("尚未配置任何 MCP 服务端。")
+        print(f"两种配置方式：① 在 .agent-workbench/config.json 里加 mcpServers；② 设置环境变量 {ENV_SERVERS}。")
+        return 0
+
+    registry = McpToolRegistry(specs)
+    try:
+        registry.start()
+        for name, reason in registry.errors.items():
+            print(f"[服务端 {name} 不可用] {reason}")
+        tools = registry.tools()
+        if not tools:
+            print("没有发现任何可用工具。")
+            return 0
+
+        if args.mcp_command == "list":
+            print(f"已连接服务端：{', '.join(registry.server_names()) or '（无）'}")
+            print(f"可用工具：{len(tools)} 个")
+            for tool in tools:
+                print(f"- {tool.qualified_name}：{tool.description or '（无说明）'}")
+            return 0
+
+        if args.mcp_command == "call":
+            try:
+                arguments = json.loads(args.args_json)
+            except json.JSONDecodeError as exc:
+                print(f"--args-json 不是合法 JSON：{exc}")
+                return 2
+            if not isinstance(arguments, dict):
+                print("--args-json 必须是 JSON 对象，例如 '{\"text\": \"hi\"}'")
+                return 2
+            result = registry.call(args.tool, arguments)
+            print(result.text)
+            if result.is_error:
+                print("[工具报告执行失败 isError=true]")
+                return 1
+            if result.structured is not None:
+                print(f"[structuredContent] {json.dumps(result.structured, ensure_ascii=False)}")
+            return 0
+    except McpError as exc:
+        print(f"MCP 调用失败：{exc}")
+        return 2
+    finally:
+        registry.close()
+
+    print("未知的 mcp 子命令。")
+    return 2
+
+
+def _run_mcp_ask(args, specs) -> int:
+    if not specs:
+        print("尚未配置任何 MCP 服务端，无法带工具回答。")
+        print(f"配置方式：环境变量 {ENV_SERVERS} 或 .agent-workbench/config.json 的 mcpServers。")
+        return 2
+    provider = create_provider()
+    registry = McpToolRegistry(specs)
+    try:
+        registry.start()
+        for name, reason in registry.errors.items():
+            print(f"[服务端 {name} 不可用] {reason}")
+        result = run_tool_loop(
+            provider,
+            "你是多 Agent 代码协作工作台里的助手，可以调用 MCP 工具来获取真实信息。",
+            args.prompt,
+            registry,
+            max_rounds=args.max_rounds,
+        )
+    except McpError as exc:
+        print(f"MCP 调用失败：{exc}")
+        return 2
+    finally:
+        registry.close()
+
+    print(result.text)
+    if result.calls:
+        print("")
+        print("工具调用记录：")
+        for line in result.evidence_lines():
+            print(f"- {line}")
+    if result.stop_reason == "max_rounds":
+        print("[已达到工具调用轮数上限，回答可能不完整]")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -309,6 +439,9 @@ def main(argv: list[str] | None = None) -> int:
             print(diff or "（新文件或无差异）")
         print(f"[{result.stage}] {'成功' if result.ok else '失败'}：{result.message}")
         return 0 if result.ok else 1
+
+    if args.command == "mcp":
+        return _run_mcp_command(args, project_root)
 
     if args.command == "provider":
         config = ProviderConfig.from_env()
