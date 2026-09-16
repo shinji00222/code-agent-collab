@@ -2,8 +2,16 @@ from __future__ import annotations
 
 import urllib.request
 import unittest
+from contextlib import closing
+from socket import AF_INET, SOCK_STREAM, socket
 
-from code_agent_collab.webview_app import find_free_port, start_local_server
+from code_agent_collab.webview_app import (
+    DEFAULT_PORT,
+    find_free_port,
+    start_local_server,
+    stop_local_server,
+    wait_until_ready,
+)
 
 
 class WebViewAppTests(unittest.TestCase):
@@ -14,15 +22,26 @@ class WebViewAppTests(unittest.TestCase):
     def test_local_server_serves_original_web_ui(self) -> None:
         server, url = start_local_server()
         try:
+            wait_until_ready(url)
             with urllib.request.urlopen(url, timeout=5) as response:
                 body = response.read().decode("utf-8")
         finally:
-            server.shutdown()
-            server.server_close()
+            stop_local_server(server)
 
         self.assertIn("/api/jobs", body)
         self.assertIn("pollJob", body)
         self.assertIn("IntegratorAgent", body)
+
+    def test_local_server_skips_occupied_default_port(self) -> None:
+        with closing(socket(AF_INET, SOCK_STREAM)) as sock:
+            sock.bind(("127.0.0.1", DEFAULT_PORT))
+            sock.listen(1)
+            server, url = start_local_server()
+            try:
+                self.assertNotEqual(url, f"http://127.0.0.1:{DEFAULT_PORT}")
+                wait_until_ready(url)
+            finally:
+                stop_local_server(server)
 
 
 if __name__ == "__main__":
