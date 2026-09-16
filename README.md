@@ -130,7 +130,7 @@ pwsh -File scripts/package-windows.ps1
 最省事的方式：复制下面这一条命令到 PowerShell，然后用数字菜单选择厂商和动作：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\Users\lwz12\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手\scripts\setup-deepseek.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手\scripts\setup-deepseek.ps1"
 ```
 
 菜单里可以选：

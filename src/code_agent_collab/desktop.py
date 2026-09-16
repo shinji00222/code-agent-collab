@@ -17,8 +17,12 @@ from .progress import read_progress
 APP_TITLE = "多Agent工作台"
 CLI_EXE_NAME = "AgentWorkbench-CLI.exe"
 PROJECT_ROOT_ENV = "AGENT_WORKBENCH_PROJECT_ROOT"
-LOCAL_WORKBENCH_ROOT = Path(
-    r"C:\Users\lwz12\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手"
+LOCAL_WORKBENCH_ROOT = (
+    Path.home()
+    / "Desktop"
+    / "AI工作台知识库"
+    / "01-项目"
+    / "project 多Agent代码协作助手"
 )
 PROJECT_ROOT_COMMANDS = {
     "init",
