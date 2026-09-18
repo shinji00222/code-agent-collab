@@ -14,8 +14,9 @@ CONFIG_FILE = "config.json"
 MAIN_VAULT_ENV = "AGENT_WORKBENCH_MAIN_VAULT"
 MAIN_VAULT_WRITE_ENV = "AGENT_WORKBENCH_MAIN_VAULT_WRITE"
 
-# 知识写入沙箱目录名（位于 dev-vault 下，属于项目自己的目录）
-SANDBOX_DIR_NAME = "main-vault-sandbox"
+# 项目自有知识库目录名（位于 dev-vault 下）。
+# 读取和写入默认都在这里，与用户电脑上的真实知识库完全隔离。
+PROJECT_VAULT_DIR_NAME = "project-vault"
 
 
 @dataclass(frozen=True)
@@ -25,26 +26,22 @@ class WorkbenchConfig:
     dev_vault_path: str
     main_vault_default_mode: str = "readonly"
     dev_vault_default_mode: str = "readwrite"
-    # 知识真正写入的位置；默认是项目内沙箱，与真实主知识库分离
+    # 知识写入位置；默认与 main_vault_path 一起指向项目自有知识库
     main_vault_write_path: str = ""
 
 
-def default_write_vault_path(project_root: Path) -> str:
-    """默认写入沙箱：项目自己的目录，保证"确认入库"不会写进真实主知识库。"""
-    return str(project_root / "dev-vault" / SANDBOX_DIR_NAME)
+def default_vault_path(project_root: Path) -> str:
+    """项目自有知识库：读写都在项目内，默认不碰外部知识库。"""
+    return str(project_root / "dev-vault" / PROJECT_VAULT_DIR_NAME)
 
 
 def default_config(project_root: Path) -> WorkbenchConfig:
-    if project_root.parent.name == "01-项目":
-        main_vault_path = str(project_root.parent.parent)
-    else:
-        main_vault_path = str(project_root.parent)
-
+    vault = default_vault_path(project_root)
     return WorkbenchConfig(
         project_name=project_root.name.removeprefix("project "),
-        main_vault_path=main_vault_path,
+        main_vault_path=vault,
         dev_vault_path=str(project_root / "dev-vault"),
-        main_vault_write_path=default_write_vault_path(project_root),
+        main_vault_write_path=vault,
     )
 
 
@@ -54,21 +51,20 @@ def config_path(project_root: Path) -> Path:
 
 def load_config(project_root: Path) -> WorkbenchConfig:
     path = config_path(project_root)
+    vault = default_vault_path(project_root)
     if not path.exists():
         cfg = default_config(project_root)
     else:
         data = json.loads(path.read_text(encoding="utf-8"))
         cfg = WorkbenchConfig(
             project_name=data["projectName"],
-            main_vault_path=data["mainVaultPath"],
+            # 读和写都用「缺键即回退项目自有知识库」的安全默认，
+            # 不会因为配置里没写就退化成读写用户电脑上的真实知识库。
+            main_vault_path=data.get("mainVaultPath") or vault,
             dev_vault_path=data["devVaultPath"],
             main_vault_default_mode=data.get("mainVaultDefaultMode", "readonly"),
             dev_vault_default_mode=data.get("devVaultDefaultMode", "readwrite"),
-            # 旧配置文件没有这个键时，安全默认仍然是项目内沙箱，
-            # 不会退化成"直接写真实主知识库"。
-            main_vault_write_path=(
-                data.get("mainVaultWritePath") or default_write_vault_path(project_root)
-            ),
+            main_vault_write_path=data.get("mainVaultWritePath") or vault,
         )
     env_main_vault = os.getenv(MAIN_VAULT_ENV)
     if env_main_vault:

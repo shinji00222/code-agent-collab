@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from code_agent_collab.agents import ReviewerAgent
 from code_agent_collab.agents.base import AgentContext
@@ -161,16 +163,38 @@ class ReviewerAgentTests(unittest.TestCase):
             self.assertEqual(agent.last_verdict, "需修改")
             self.assertTrue(any("冲突标记" in reason for reason in result.outputs))
 
-    def test_vault_path_reference_marks_needs_fix(self) -> None:
+    def test_external_vault_path_reference_marks_needs_fix(self) -> None:
+        """显式接入外部知识库时，草稿引用该外部知识库路径要判越权。"""
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            vault = Path(load_config(root).main_vault_path)
-            content = _normal_content() + f"\n写入目标：{vault}\n"
+            root = Path(tmp) / "project"
+            root.mkdir()
+            external_vault = Path(tmp) / "external-vault"
+            external_vault.mkdir()
+            content = _normal_content() + f"\n写入目标：{external_vault}\n"
+            _write_draft(root, content)
+            with patch.dict(
+                os.environ,
+                {"AGENT_WORKBENCH_MAIN_VAULT": str(external_vault)},
+                clear=False,
+            ):
+                agent = ReviewerAgent()
+                result = agent.run(_make_context(root), [])
+            self.assertEqual(agent.last_verdict, "需修改")
+            self.assertTrue(any("越权" in reason for reason in result.outputs))
+
+    def test_project_local_vault_reference_is_not_flagged(self) -> None:
+        """默认隔离下知识库就在项目内，引用它属于正常路径，不应误判越权。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            project_vault = Path(load_config(root).main_vault_path)
+            self.assertIn(root, project_vault.parents)
+            content = _normal_content() + f"\n写入目标：{project_vault}\n"
             _write_draft(root, content)
             agent = ReviewerAgent()
             result = agent.run(_make_context(root), [])
-            self.assertEqual(agent.last_verdict, "需修改")
-            self.assertTrue(any("越权" in reason for reason in result.outputs))
+            self.assertEqual(agent.last_verdict, "通过")
+            self.assertFalse(any("越权" in reason for reason in result.outputs))
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 {
   "projectName": "多Agent代码协作助手",
-  "mainVaultPath": "C:\\path\\to\\your\\main-vault",
+  "mainVaultPath": "C:\\path\\to\\this-project\\dev-vault\\project-vault",
   "devVaultPath": "C:\\path\\to\\this-project\\dev-vault",
   "mainVaultDefaultMode": "readonly",
   "devVaultDefaultMode": "readwrite",
-  "mainVaultWritePath": "C:\\path\\to\\this-project\\dev-vault\\main-vault-sandbox"
+  "mainVaultWritePath": "C:\\path\\to\\this-project\\dev-vault\\project-vault"
 }

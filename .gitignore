@@ -12,9 +12,9 @@ dist/
 dev-vault/pending/*.md
 dev-vault/projects/*.md
 
-# 知识写入沙箱：沙箱里真正写入的笔记不进版本库，只保留目录说明
-dev-vault/main-vault-sandbox/**/*.md
-!dev-vault/main-vault-sandbox/README.md
+# 项目自有知识库：里面真正写入的笔记不进版本库，只保留目录说明
+dev-vault/project-vault/**/*.md
+!dev-vault/project-vault/README.md
 logs/context-packs/
 logs/workflows/
 logs/plans/

@@ -202,8 +202,8 @@ class ReviewFlowTests(unittest.TestCase):
             self.assertTrue(result.target_path.exists())
             self.assertFalse(list(vault.rglob("*.md")))
 
-    def test_confirm_defaults_to_project_sandbox_when_key_missing(self) -> None:
-        """旧配置没有 mainVaultWritePath 时，默认写项目内沙箱，真实主知识库零写入。"""
+    def test_confirm_defaults_to_project_vault_when_key_missing(self) -> None:
+        """旧配置没有 mainVaultWritePath 时，默认写项目自有知识库，配置的读取库零写入。"""
         with tempfile.TemporaryDirectory() as tmp:
             project_root, vault = _make_project(tmp, include_write_key=False)
             note = _write_note(project_root, "2026-08-20-任务I-复利候选.md", "内容安全。")
@@ -216,10 +216,10 @@ class ReviewFlowTests(unittest.TestCase):
 
             self.assertEqual(result.status, "已确认入库")
             assert result.target_path is not None
-            sandbox = project_root / "dev-vault" / "main-vault-sandbox"
+            project_vault = project_root / "dev-vault" / "project-vault"
             self.assertTrue(
-                sandbox == result.target_path.parent
-                or sandbox in result.target_path.parents
+                project_vault == result.target_path.parent
+                or project_vault in result.target_path.parents
             )
             self.assertFalse(list(vault.rglob("*.md")))
 

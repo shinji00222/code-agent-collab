@@ -25,7 +25,13 @@ class ContextPackTests(unittest.TestCase):
             self.assertTrue(task_id.startswith("20260818-224000-"))
             self.assertIn("测试任务", content)
             self.assertIn("项目定义.md", content)
-            self.assertIn("主知识库默认禁止自动写入", content)
+            # 上下文包要写清检索来源与写入目标，且默认都指向项目自有知识库
+            self.assertIn("知识检索来源", content)
+            self.assertIn("知识写入目标", content)
+            self.assertIn(
+                str(project_root / "dev-vault" / "project-vault"),
+                content,
+            )
 
     def test_create_context_pack_writes_to_logs_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

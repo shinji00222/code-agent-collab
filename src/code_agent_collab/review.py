@@ -89,17 +89,21 @@ def _mark_status(path: Path, status: str, reason: str, now: datetime | None = No
 
 
 def _main_vault(project_root: Path) -> Path:
-    """只读检索用的主知识库路径。程序只读它，不写它。"""
+    """只读检索用的知识库路径。程序只读它，不写它。
+
+    默认指向项目自有知识库 dev-vault/project-vault；
+    要检索用户电脑上的真实知识库，必须显式配置 mainVaultPath。
+    """
     return Path(load_config(project_root).main_vault_path)
 
 
 def _write_vault(project_root: Path) -> Path:
     """知识实际写入的位置。
 
-    默认是项目内的 dev-vault/main-vault-sandbox，和真实主知识库分离：
-    读取可以看真实知识库，但"确认入库"只会落到沙箱里，真实知识库零写入。
-    需要写进真实主知识库时，必须显式配置 mainVaultWritePath 或
-    环境变量 AGENT_WORKBENCH_MAIN_VAULT_WRITE。
+    默认与主知识库路径一起指向项目自有知识库 dev-vault/project-vault，
+    所以「读」和「写」都只发生在项目内，用户电脑上的真实知识库既不被读、
+    也不被写。需要接真实知识库时，必须显式配置 mainVaultPath /
+    mainVaultWritePath（或对应的两个环境变量）。
     """
     cfg = load_config(project_root)
     return Path(cfg.main_vault_write_path or cfg.main_vault_path)

@@ -99,10 +99,11 @@ def _render_context_pack(
 
 ## 知识库范围
 
-- 主知识库只读范围：{cfg.main_vault_path}
+- 知识检索来源：{cfg.main_vault_path}
+- 知识写入目标：{cfg.main_vault_write_path or cfg.main_vault_path}
 - dev-vault 可读写范围：{cfg.dev_vault_path}
 - 本次禁止读取的范围：未授权的隐私、账号、密钥、令牌、Cookie。
-- 本次禁止写入的范围：主知识库默认禁止自动写入。
+- 本次禁止写入的范围：项目自有知识库以外的任何知识库（默认读写都只在项目内进行）。
 
 ## 相关项目文档
 
