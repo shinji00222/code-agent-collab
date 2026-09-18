@@ -9,9 +9,9 @@
 
 ## 当前版本
 
-当前版本：`v0.15.0`（开发版）
+当前版本：`v0.15.1`（安全修复版）
 
-阶段定位：主知识库只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + WebView 本地软件窗口 + 草稿应用实验能力 + **MCP 工具接入**。
+阶段定位：主知识库只读检索 + **知识写入沙箱隔离** + 人工确认入库 + 草稿评审 + 半动态主控编排 + WebView 本地软件窗口 + 草稿应用实验能力 + **MCP 工具接入**。
 
 ## MCP 工具接入（v0.15.0 新增）
 
@@ -51,7 +51,8 @@ agent-workbench mcp ask "帮我看看这个目录里有什么"        # 让 AI �
 
 ## 核心原则
 
-- 主知识库默认只读。
+- 主知识库默认只读：程序只从它检索，不写它。
+- **知识写入与真实知识库隔离**：`confirm` 默认写进项目内 `dev-vault/main-vault-sandbox`，真实主知识库零写入；要写回去必须显式配置 `mainVaultWritePath`。
 - AI 自动生成内容先进入 `dev-vault`。
 - 候选复利记录先进入 `dev-vault/pending`。
 - 写入主知识库必须经过用户确认。
@@ -64,7 +65,7 @@ project 多Agent代码协作助手/
 ├── src/code_agent_collab/   # 程序源码（agents/ 是 9 个 Agent 角色）
 ├── tests/                   # 自动化测试
 ├── product-docs/            # 人写的需求、规则、企划文档
-├── dev-vault/               # AI 产出区（候选记录、代码草稿），确认后才能进主知识库
+├── dev-vault/               # AI 产出区（候选记录、代码草稿、知识写入沙箱），确认后才可能进主知识库
 ├── logs/                    # 本地运行产物（上下文包、进度快照、工作流日志、worker 状态账本、共享黑板）
 ├── .agent-workbench/        # 本地配置（config.json 不进 Git）
 ├── 项目规则.md              # 项目规则总览（给人看）
@@ -105,7 +106,7 @@ python -m code_agent_collab.webui
 - `reflect`：根据上下文包生成候选复利记录。
 - `pending`：列出等待用户确认的候选记录。
 - `review`：AI 审查候选记录；审查通过只标记"待人工确认"并记录 AI 建议的写入位置，**不自动写入主知识库**；命中敏感信息的标记"待人工处理"。
-- `confirm`：人工确认候选记录并写入主知识库（仍会拦截敏感信息）。
+- `confirm`：人工确认候选记录并写入知识库；默认写进项目内沙箱 `dev-vault/main-vault-sandbox`，只有显式配置 `mainVaultWritePath` 才会写进真实主知识库（写入前仍会拦截敏感信息）。
 - `discard`：废弃候选记录，不写入主知识库。
 - `demo`：一键跑通基础闭环。
 - `run`：执行规则版多 Agent 工作流。
@@ -217,20 +218,23 @@ python -m code_agent_collab.cli init
   "mainVaultPath": "C:\\path\\to\\your-obsidian-vault",
   "devVaultPath": "C:\\path\\to\\this-project\\dev-vault",
   "mainVaultDefaultMode": "readonly",
-  "devVaultDefaultMode": "readwrite"
+  "devVaultDefaultMode": "readwrite",
+  "mainVaultWritePath": "C:\\path\\to\\this-project\\dev-vault\\main-vault-sandbox"
 }
 ```
 
-- `mainVaultPath`：你的主知识库（Obsidian 或其他 Markdown 文件夹），程序只读检索，绝不写入。
+- `mainVaultPath`：你的主知识库（Obsidian 或其他 Markdown 文件夹），程序**只读检索，绝不写入**。
 - `devVaultPath`：项目内 `dev-vault` 文件夹，AI 生成的草稿和候选经验写在这里。
+- `mainVaultWritePath`：知识**实际写入**的位置。不配置时默认是项目内 `dev-vault/main-vault-sandbox`，也就是写入和你的真实知识库天然隔离。想真的写进主知识库，必须把这一项显式指向主知识库；不写就不会碰它。
 
 不想编辑 JSON，也可以直接设置环境变量（优先级高于 `config.json`）：
 
 ```powershell
-$env:AGENT_WORKBENCH_MAIN_VAULT="C:\path\to\your-obsidian-vault"
+$env:AGENT_WORKBENCH_MAIN_VAULT="C:\path\to\your-obsidian-vault"          # 只读检索目标
+$env:AGENT_WORKBENCH_MAIN_VAULT_WRITE="C:\path\to\your-obsidian-vault"    # 写入目标（默认是项目内沙箱）
 ```
 
-没有现成知识库也可以运行：KnowledgeAgent 会提示未检索到相关内容，其余功能不受影响。
+没有现成知识库也可以运行：KnowledgeAgent 会提示未检索到相关内容，其余功能不受影响。隔离说明见 [dev-vault/main-vault-sandbox/README.md](dev-vault/main-vault-sandbox/README.md)。
 
 ## 配置
 

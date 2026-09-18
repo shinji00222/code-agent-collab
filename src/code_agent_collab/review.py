@@ -89,11 +89,24 @@ def _mark_status(path: Path, status: str, reason: str, now: datetime | None = No
 
 
 def _main_vault(project_root: Path) -> Path:
+    """只读检索用的主知识库路径。程序只读它，不写它。"""
     return Path(load_config(project_root).main_vault_path)
 
 
+def _write_vault(project_root: Path) -> Path:
+    """知识实际写入的位置。
+
+    默认是项目内的 dev-vault/main-vault-sandbox，和真实主知识库分离：
+    读取可以看真实知识库，但"确认入库"只会落到沙箱里，真实知识库零写入。
+    需要写进真实主知识库时，必须显式配置 mainVaultWritePath 或
+    环境变量 AGENT_WORKBENCH_MAIN_VAULT_WRITE。
+    """
+    cfg = load_config(project_root)
+    return Path(cfg.main_vault_write_path or cfg.main_vault_path)
+
+
 def _resolve_target(project_root: Path, ai_target: str) -> Path:
-    vault = _main_vault(project_root)
+    vault = _write_vault(project_root)
     if ai_target:
         candidate = (vault / ai_target).resolve()
         if vault.resolve() in candidate.parents and candidate.is_dir():
@@ -104,7 +117,7 @@ def _resolve_target(project_root: Path, ai_target: str) -> Path:
     return vault
 
 
-def _write_to_main_vault(project_root: Path, content: str, target_dir: Path, source_name: str) -> Path:
+def _write_to_vault(project_root: Path, content: str, target_dir: Path, source_name: str) -> Path:
     ensure_dir(target_dir)
     cleaned = _strip_machine_paths(content)
     target = target_dir / source_name
@@ -130,15 +143,17 @@ def review_pending_note(
         )
 
     vault = _main_vault(project_root)
+    write_vault = _write_vault(project_root)
     prompt = (
         "你是知识入库审查员。请审查下面的候选复利记录，判断它是否有长期价值、"
         "是否与主知识库明显重复、是否包含不适合入库的内容。\n"
-        f"主知识库位置：{vault}\n\n"
+        f"主知识库位置（只读检索，不要写它）：{vault}\n"
+        f"知识库写入根目录（确认后只会写到这里）：{write_vault}\n\n"
         f"{content}\n\n"
         "请按以下格式输出三行：\n"
         "REVIEW_VERDICT: approve 或 risky\n"
         "REVIEW_REASON: 一句话理由\n"
-        "REVIEW_TARGET: 建议写入的主知识库相对路径（必须是现有目录，或留空）"
+        "REVIEW_TARGET: 建议写入的相对路径（必须是上面的写入根目录下已存在的目录，或留空）"
     )
     try:
         ai_text = provider.complete("知识入库审查", prompt)
@@ -187,10 +202,10 @@ def confirm_pending_note(project_root: Path, path: Path, now: datetime | None = 
             "人工确认仍发现敏感信息：" + "、".join(sensitive),
             now,
         )
-    vault = _main_vault(project_root)
+    vault = _write_vault(project_root)
     ai_target = _read_ai_target(content)
     target_dir = _resolve_target(project_root, ai_target)
-    target_path = _write_to_main_vault(project_root, content, target_dir, path.name)
+    target_path = _write_to_vault(project_root, content, target_dir, path.name)
     relative = target_path.relative_to(vault)
     _mark_status(path, f"已确认入库：{relative}", f"人工确认，写入 {relative}", now)
     return ReviewResult(

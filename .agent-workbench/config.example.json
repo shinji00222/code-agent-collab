@@ -3,5 +3,6 @@
   "mainVaultPath": "C:\\path\\to\\your\\main-vault",
   "devVaultPath": "C:\\path\\to\\this-project\\dev-vault",
   "mainVaultDefaultMode": "readonly",
-  "devVaultDefaultMode": "readwrite"
+  "devVaultDefaultMode": "readwrite",
+  "mainVaultWritePath": "C:\\path\\to\\this-project\\dev-vault\\main-vault-sandbox"
 }

@@ -11,6 +11,10 @@ dist/
 # 本地运行产物（不进版本库，防止 git status 噪音）
 dev-vault/pending/*.md
 dev-vault/projects/*.md
+
+# 知识写入沙箱：沙箱里真正写入的笔记不进版本库，只保留目录说明
+dev-vault/main-vault-sandbox/**/*.md
+!dev-vault/main-vault-sandbox/README.md
 logs/context-packs/
 logs/workflows/
 logs/plans/

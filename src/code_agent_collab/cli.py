@@ -345,7 +345,7 @@ def main(argv: list[str] | None = None) -> int:
         result = confirm_pending_note(project_root, path)
         print(f"{result.path.name} -> {result.status}（{result.reason}）")
         if result.target_path:
-            print(f"主知识库文件：{result.target_path}")
+            print(f"写入文件：{result.target_path}")
         return 0
 
     if args.command == "discard":
