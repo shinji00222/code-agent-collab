@@ -26,6 +26,12 @@ SECTION_RISK = "## 风险"
 
 DRAFT_GLOB = "*-coder-draft*.md"
 TEST_TIMEOUT_SECONDS = 120
+
+# 兜底合并草稿的状态标记：Integrator 没能产出可解析的合并草稿时会生成这种
+# 兜底说明。它结构上是合法的，但内容只是把原始草稿堆在一起，绝不能当成
+# 可应用的实现，所以评审和应用闸门都要认得这个标记。
+FALLBACK_MARKER = "FALLBACK_INTEGRATED_DRAFT"
+
 TRIAL_COPY_EXCLUDE_DIRS = {
     ".git",
     ".mypy_cache",
@@ -169,6 +175,16 @@ def parse_draft(content: str) -> ParseResult:
     if not changes:
         errors.append(f"{SECTION_CODE} 下没有找到任何 ### <路径> 代码块")
     actual_paths = [_normalize_draft_path(change.path) for change in changes]
+    # 同一路径出现多个块时，落盘只会保留最后一份（_apply_changes 顺序写），
+    # 前面几份会静默消失。这里必须直接判不合法，不能让它在没人察觉的情况下通过。
+    duplicates = sorted({path for path in actual_paths if actual_paths.count(path) > 1})
+    if duplicates:
+        detail = "、".join(
+            f"{path}（出现 {actual_paths.count(path)} 次）" for path in duplicates
+        )
+        errors.append(
+            f"{SECTION_CODE} 中同一路径出现多个版本，必须先合并成一份完整内容：{detail}"
+        )
     if declared_paths and actual_paths:
         missing_code = sorted(set(declared_paths) - set(actual_paths))
         undeclared_code = sorted(set(actual_paths) - set(declared_paths))
@@ -230,6 +246,12 @@ def review_apply_gate(project_root: Path, draft_path: Path, content: str, parsed
 
     if _has_unresolved_conflict_marker(draft_body):
         errors.append("草稿包含未解决冲突标记")
+
+    if FALLBACK_MARKER in content:
+        errors.append(
+            "草稿是兜底合并说明（未经真正合并），不能直接应用到正式源码，"
+            "请重新合并或人工处理"
+        )
 
     if draft_path.name.endswith("-integrated-draft.md"):
         return errors
@@ -388,11 +410,21 @@ def _ignore_trial_copy(directory: str, names: list[str]) -> set[str]:
     return ignored
 
 
-def git_commit(project_root: Path, message: str) -> tuple[bool, str]:
+def git_commit(
+    project_root: Path,
+    message: str,
+    paths: list[str] | None = None,
+) -> tuple[bool, str]:
+    """提交改动。
+
+    paths 非空时只暂存这些路径（apply-draft 的批准清单），避免把无关改动卷进提交；
+    paths 为空时保持旧的 `git add -A` 行为，供其他调用方使用。
+    """
     if not (project_root / ".git").exists():
         return False, "不是 Git 仓库，跳过自动提交"
+    add_args = ["git", "add", "--", *paths] if paths else ["git", "add", "-A"]
     add = subprocess.run(
-        ["git", "add", "-A"],
+        add_args,
         cwd=project_root,
         check=False,
         capture_output=True,
@@ -526,7 +558,12 @@ def apply_draft_workflow(project_root: Path, draft_path: Path, apply: bool) -> A
             diffs=diffs,
         )
 
-    committed, commit_msg = git_commit(project_root, f"apply-draft: {draft_path.stem}")
+    # 只暂存本次批准清单里的文件，避免把工作区其它改动一起卷进提交
+    committed, commit_msg = git_commit(
+        project_root,
+        f"apply-draft: {draft_path.stem}",
+        paths=[change.path for change in parsed.changes],
+    )
     if not committed:
         return ApplyResult(
             ok=True,

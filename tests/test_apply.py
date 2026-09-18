@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from code_agent_collab.apply import (
+    FALLBACK_MARKER,
     DraftChange,
     apply_draft_workflow,
     find_draft_path,
@@ -124,6 +125,40 @@ class ParseDraftTests(unittest.TestCase):
         self.assertIn("修改文件清单列出但建议代码缺少：src/declared.py", result.errors)
         self.assertIn("建议代码包含未在修改文件清单声明的路径：src/actual.py", result.errors)
 
+    def test_parse_rejects_duplicate_code_blocks(self) -> None:
+        """同一路径两个块：落盘只会留最后一份，必须直接判不合法。"""
+        draft = "\n".join(
+            [
+                "# CoderAgent 草稿：测试任务",
+                "",
+                "## 修改文件清单",
+                "- src/example.py（修改）",
+                "",
+                "## 修改原因",
+                "测试原因。",
+                "",
+                "## 建议代码",
+                "### src/example.py",
+                "print('first')",
+                "### src/example.py",
+                "print('second')",
+                "",
+                "## 测试方法",
+                "运行 python -m unittest discover -s tests。",
+                "",
+                "## 风险",
+                "低风险。",
+            ]
+        )
+
+        result = parse_draft(draft)
+
+        self.assertEqual(len(result.changes), 2)
+        self.assertTrue(
+            any("同一路径出现多个版本" in error for error in result.errors),
+            result.errors,
+        )
+
 
 class ValidateTests(unittest.TestCase):
     def test_allowed_paths_pass(self) -> None:
@@ -225,6 +260,58 @@ class ApplyDraftTests(unittest.TestCase):
             self.assertEqual(result.stage, "评审闸门")
             self.assertIn("敏感信息", result.message)
             self.assertIn("冲突标记", result.message)
+
+    def test_apply_rejects_fallback_integrated_draft(self) -> None:
+        """兜底合并说明不能被当成可应用的实现。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            content = _make_draft({"tests/test_sample.py": PASS_TEST}).replace(
+                "测试原因。",
+                f"Provider 输出无法解析（状态标记：{FALLBACK_MARKER}）。",
+            )
+            draft_path = _write_draft(
+                root, content, name="20260101-000000-任务F-integrated-draft.md"
+            )
+
+            result = apply_draft_workflow(root, draft_path, apply=True)
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.stage, "评审闸门")
+            self.assertIn("兜底合并说明", result.message)
+
+    def test_commit_only_stages_approved_files(self) -> None:
+        """apply 期间跑测试会往工作区写文件，这些副作用不能混进自动提交。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            _init_git(root)
+            side_effect_test = '''import unittest
+from pathlib import Path
+
+
+class SampleTests(unittest.TestCase):
+    def test_ok(self) -> None:
+        Path(__file__).resolve().parent.joinpath("artifact.py").write_text("side\\n", encoding="utf-8")
+        self.assertTrue(True)
+'''
+            draft_path = _write_draft(
+                root, _make_draft({"tests/test_sample.py": side_effect_test})
+            )
+
+            result = apply_draft_workflow(root, draft_path, apply=True)
+
+            self.assertTrue(result.ok, result.message)
+            names = subprocess.run(
+                ["git", "show", "--name-only", "--pretty=format:", "HEAD"],
+                cwd=root, check=True, capture_output=True, text=True,
+            ).stdout.split()
+            self.assertEqual(names, ["tests/test_sample.py"])
+            # 副作用文件留在工作区，但没有被提交
+            self.assertTrue((root / "tests" / "artifact.py").exists())
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=root, check=True, capture_output=True, text=True,
+            ).stdout
+            self.assertIn("tests/artifact.py", status)
 
     def test_find_draft_path_by_keyword(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

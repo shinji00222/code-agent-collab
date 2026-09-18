@@ -50,6 +50,28 @@ class ShortThenGoodProvider(AIProvider):
         self.coder_calls += 1
         if self.coder_calls <= 2:
             return "太短"
+        # 按自己的职责路径产出：Reviewer 现在会校验草稿有没有越出自己的范围，
+        # 测试 worker 写 src/ 会被判越界（这是刻意的）。
+        if "负责的部分：测试" in user_prompt:
+            return _valid_draft_text("tests/test_example.py")
+        return _valid_draft_text("src/example.py")
+
+
+class GoodComplexProvider(AIProvider):
+    """COMPLEX 档的"正常"桩：两个 Coder 各写自己范围内的文件，合并成一份合法草稿。"""
+
+    name = "test-good"
+
+    def complete(self, system_prompt: str, user_prompt: str) -> str:
+        del system_prompt
+        if "几个 worker" in user_prompt:
+            return "COMPLEX"
+        if "合并成一份统一草稿" in user_prompt:
+            return _valid_draft_text("src/integrated.py")
+        if "代码实现草稿" not in user_prompt:
+            return "模拟 AI 已收到任务：" + user_prompt
+        if "负责的部分：测试" in user_prompt:
+            return _valid_draft_text("tests/test_example.py")
         return _valid_draft_text("src/example.py")
 
 
@@ -257,9 +279,12 @@ class AdaptiveWorkflowTests(unittest.TestCase):
     def test_complex_task_parallel_coders_integrator_and_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_project(tmp)
-            result = run_adaptive_workflow(
-                root, "用 python 和前端写一个带多个模块和接口的完整网站，拆成前后端"
-            )
+            provider = GoodComplexProvider()
+
+            with patch("code_agent_collab.orchestration.create_provider", return_value=provider):
+                result = run_adaptive_workflow(
+                    root, "用 python 和前端写一个带多个模块和接口的完整网站，拆成前后端"
+                )
 
             roles = [item.role for item in result.agent_results]
             self.assertEqual(result.plan.complexity.value, "complex")

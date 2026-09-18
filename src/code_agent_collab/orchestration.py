@@ -97,8 +97,17 @@ class AdaptivePlanSummary:
     updated_at: datetime
 
 
-def build_worker(spec: WorkerSpec, provider: AIProvider):
-    """按 WorkerSpec 构建 worker 实例。"""
+def build_worker(
+    spec: WorkerSpec,
+    provider: AIProvider,
+    *,
+    coder_contracts: dict[str, tuple[str, ...]] | None = None,
+):
+    """按 WorkerSpec 构建 worker 实例。
+
+    coder_contracts：并行 Coder 的「worker 标签 -> 负责路径」映射，交给
+    ReviewerAgent 做产物级越界校验。只有需要校验草稿的 worker 会用到它。
+    """
     if spec.role == "KnowledgeAgent":
         return KnowledgeAgent()
     if spec.role == "CoderAgent":
@@ -106,7 +115,7 @@ def build_worker(spec: WorkerSpec, provider: AIProvider):
     if spec.role == "IntegratorAgent":
         return IntegratorAgent(provider=provider)
     if spec.role == "ReviewerAgent":
-        return ReviewerAgent(provider=provider)
+        return ReviewerAgent(provider=provider, contracts=coder_contracts)
     raise ValueError(f"未知 worker 角色：{spec.role}")
 
 
@@ -742,7 +751,11 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
         done=done_roles,
     )
     for stage_index, stage in enumerate(plan.stages[start_stage_index:], start=start_stage_index):
-        workers = [build_worker(spec, provider) for spec in stage]
+        # 把已有 Coder 的负责路径交给 Reviewer，让它能校验草稿有没有越界。
+        coder_contracts = {spec.label: spec.owned_paths for spec in latest_coder_specs}
+        workers = [
+            build_worker(spec, provider, coder_contracts=coder_contracts) for spec in stage
+        ]
         running_roles = {_stage_item(spec, 0)["role"] for spec in stage}
         _pause_if_requested(
             project_root,
@@ -906,7 +919,11 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
                 ]
                 _extend_unique_results(results, integrator_results)
                 done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_integrator_specs)
-            reviewer = build_worker(WorkerSpec("ReviewerAgent"), provider)
+            reviewer = build_worker(
+                WorkerSpec("ReviewerAgent"),
+                provider,
+                coder_contracts={spec.label: spec.owned_paths for spec in latest_coder_specs},
+            )
             _pause_if_requested(
                 project_root,
                 task_id=task_id,

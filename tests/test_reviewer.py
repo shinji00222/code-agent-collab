@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from code_agent_collab.agents import ReviewerAgent
 from code_agent_collab.agents.base import AgentContext
+from code_agent_collab.apply import FALLBACK_MARKER
 from code_agent_collab.config import load_config
 from code_agent_collab.file_utils import write_text
 
@@ -23,8 +24,8 @@ def _make_context(project_root: Path) -> AgentContext:
     )
 
 
-def _write_draft(project_root: Path, content: str) -> Path:
-    path = project_root / "dev-vault" / "projects" / f"{TASK_ID}-coder-draft.md"
+def _write_draft(project_root: Path, content: str, name: str | None = None) -> Path:
+    path = project_root / "dev-vault" / "projects" / (name or f"{TASK_ID}-coder-draft.md")
     write_text(path, content)
     return path
 
@@ -195,6 +196,150 @@ class ReviewerAgentTests(unittest.TestCase):
             result = agent.run(_make_context(root), [])
             self.assertEqual(agent.last_verdict, "通过")
             self.assertFalse(any("越权" in reason for reason in result.outputs))
+
+
+class ReviewerOwnershipTests(unittest.TestCase):
+    """Coder 之间不通信，分工只能靠 owned_paths 契约；契约必须在产物侧强制。"""
+
+    def test_draft_outside_owned_paths_marks_needs_fix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            # 「实现」worker 只负责 src/，却在草稿里写了 tests/ 下的文件
+            _write_draft(
+                root,
+                _normal_content().replace("src/example.py", "tests/test_example.py"),
+                name=f"{TASK_ID}-coder-draft-实现.md",
+            )
+            agent = ReviewerAgent(contracts={"实现": ("src/",), "测试": ("tests/",)})
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "需修改")
+            self.assertTrue(any("越出负责路径" in reason for reason in result.outputs))
+
+    def test_draft_within_owned_paths_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            _write_draft(
+                root,
+                _normal_content(),
+                name=f"{TASK_ID}-coder-draft-实现.md",
+            )
+            agent = ReviewerAgent(contracts={"实现": ("src/",), "测试": ("tests/",)})
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "通过", result.outputs)
+            self.assertFalse(any("越出负责路径" in reason for reason in result.outputs))
+
+    def test_integrated_draft_checked_against_union(self) -> None:
+        """合并草稿可以用任一 worker 的范围，但不能超出所有范围之和。"""
+        merged = """# IntegratorAgent 合并草稿：测试任务
+
+## AI 草稿
+
+## 修改文件清单
+- src/example.py（修改）
+- tests/test_example.py（新增）
+## 修改原因
+合并两份 Coder 草稿。
+## 建议代码
+### src/example.py
+def answer():
+    return 42
+### tests/test_example.py
+import unittest
+## 测试方法
+运行 python -m unittest discover -s tests。
+## 风险
+无。
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            _write_draft(root, merged, name=f"{TASK_ID}-integrated-draft.md")
+            agent = ReviewerAgent(contracts={"实现": ("src/",), "测试": ("tests/",)})
+            result = agent.run(_make_context(root), [])
+            self.assertEqual(agent.last_verdict, "通过", result.outputs)
+
+            # 只声明「实现」负责 src/ 时，合并草稿里的 tests/ 路径就超出并集
+            agent2 = ReviewerAgent(contracts={"实现": ("src/",)})
+            result2 = agent2.run(_make_context(root), [])
+            self.assertEqual(agent2.last_verdict, "需修改")
+            self.assertTrue(any("越出负责路径" in reason for reason in result2.outputs))
+
+    def test_coder_drafts_checked_even_when_integrated_draft_exists(self) -> None:
+        """合并草稿会遮蔽单份草稿，所以每份 Coder 草稿的契约要单独校验。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            # 合并草稿本身合法（只用 src/，落在两个 worker 范围之和内）
+            _write_draft(root, _normal_content(), name=f"{TASK_ID}-integrated-draft.md")
+            # 「实现」worker 却越界写了 tests/ 下的文件
+            _write_draft(
+                root,
+                _normal_content().replace("src/example.py", "tests/test_example.py"),
+                name=f"{TASK_ID}-coder-draft-实现.md",
+            )
+            agent = ReviewerAgent(contracts={"实现": ("src/",), "测试": ("tests/",)})
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "需修改")
+            self.assertTrue(
+                any(
+                    "越出负责路径" in reason and "实现" in reason
+                    for reason in result.outputs
+                ),
+                result.outputs,
+            )
+
+    def test_fallback_integrated_draft_marks_needs_fix(self) -> None:
+        """Integrator 的兜底说明结构合法，但不是真正的合并结果，不能放行。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            content = _normal_content().replace(
+                "补充一个可验证的示例实现。",
+                "Provider 输出没有形成可解析的五小节草稿，IntegratorAgent 生成安全兜底合并说明。"
+                f"（状态标记：{FALLBACK_MARKER}）",
+            )
+            _write_draft(root, content, name=f"{TASK_ID}-integrated-draft.md")
+            agent = ReviewerAgent()
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "需修改")
+            self.assertTrue(
+                any("兜底合并说明" in reason for reason in result.outputs),
+                result.outputs,
+            )
+
+    def test_no_contracts_skips_ownership_check(self) -> None:
+        """单 Coder 档没有契约，不得因此误报越界。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            _write_draft(root, _normal_content())
+            agent = ReviewerAgent()
+            result = agent.run(_make_context(root), [])
+            self.assertEqual(agent.last_verdict, "通过", result.outputs)
+
+    def test_duplicate_path_in_draft_marks_needs_fix(self) -> None:
+        """同一路径出现两个版本必须判需修改，不能静默留最后一份。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            single = "### src/example.py\ndef answer():\n    return 42\n"
+            doubled = single + "### src/example.py\ndef answer():\n    return 43\n"
+            self.assertIn(single, _normal_content())
+            _write_draft(root, _normal_content().replace(single, doubled))
+            agent = ReviewerAgent()
+            result = agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "需修改")
+            self.assertTrue(
+                any("同一路径出现多个版本" in reason for reason in result.outputs),
+                result.outputs,
+            )
 
 
 if __name__ == "__main__":

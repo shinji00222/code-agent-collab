@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..apply import parse_draft
+from ..apply import FALLBACK_MARKER, parse_draft
 from ..file_utils import ensure_dir, write_text
 from ..providers import AIProvider, create_provider
 from .base import AgentContext, AgentResult, BaseAgent, PermissionLevel
@@ -56,6 +56,11 @@ class IntegratorAgent(BaseAgent):
                 f"任务：{context.task_goal}\n"
                 f"上下文包：{context.context_pack_path}\n"
                 "请把下面多份 Coder 草稿合并成一份统一草稿，去掉重复内容，标出冲突和风险。\n"
+                "合并规则（必须遵守，评审会逐条机械检查）：\n"
+                "1. 同一个文件路径在整个「## 建议代码」里只能出现一次，块内必须是合并后的完整文件内容。\n"
+                "2. 多份草稿改到同一个文件时，要真正把两边的改动合到一起，不能只保留其中一份。\n"
+                "3. 无法合并的冲突要逐条写进「## 风险」，并注明来自哪份草稿。\n"
+                "4. 「## 修改文件清单」里的路径必须与「## 建议代码」下的 ### 块一一对应，不多不少。\n"
                 "必须严格保留以下 Markdown 小节标题：\n"
                 "## 修改文件清单\n"
                 "## 修改原因\n"
@@ -154,7 +159,8 @@ def _ensure_integrated_format(integrated: str, source_text: str) -> str:
             "## 修改文件清单",
             "- src/integrated_plan.md（新增）",
             "## 修改原因",
-            "Provider 输出没有形成可解析的五小节草稿，IntegratorAgent 生成安全兜底合并说明。",
+            "Provider 输出没有形成可解析的五小节草稿，IntegratorAgent 生成安全兜底合并说明。"
+            f"（状态标记：{FALLBACK_MARKER}）",
             "## 建议代码",
             "### src/integrated_plan.md",
             "# 合并草稿说明",
@@ -166,5 +172,6 @@ def _ensure_integrated_format(integrated: str, source_text: str) -> str:
             "运行 python -m unittest discover -s tests，并人工检查合并草稿中的冲突和重复内容。",
             "## 风险",
             "这是兜底合并说明，不应直接作为最终实现应用到正式源码。",
+            "Provider 输出的解析问题：" + "；".join(parsed.errors),
         ]
     )
