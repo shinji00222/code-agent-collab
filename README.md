@@ -1,4 +1,6 @@
-# 多 Agent 代码协作助手
+# Multi-Agent Software Engineering System
+
+中文名：多 Agent 代码协作助手
 
 一个本地优先的命令行原型，用来探索：
 
@@ -6,6 +8,33 @@
 - Obsidian 知识库如何参与任务上下文；
 - AI 生成的经验如何先进入候选区，再由用户确认；
 - 如何避免主知识库被自动污染。
+
+English: a local-first multi-agent coding workbench. It explores how agents can plan a coding task, draft code, review the draft, preview a diff, run tests, and keep project knowledge isolated from the user's real knowledge base by default.
+
+## English Overview
+
+This project is not trying to add as many agents as possible. The current direction is to make it behave more like a real software-engineering agent system:
+
+- understand a repository and task context;
+- generate an adaptive plan;
+- produce code drafts without directly touching source files;
+- review draft structure, paths, risks, and test instructions;
+- preview or apply diffs through a guarded `coding-loop`;
+- run tests before committing local changes;
+- keep long-term knowledge writes behind explicit confirmation.
+
+Current focus: **Stable Coding Loop -> Hierarchical Context -> Evaluation**.
+
+Quick start:
+
+```powershell
+$env:PYTHONPATH="src"
+python -m code_agent_collab.cli provider
+python -m code_agent_collab.cli coding-loop "add a tiny test"       # dry-run, diff preview only
+python -m code_agent_collab.cli coding-loop "add a tiny test" --apply # apply, test, and commit locally
+```
+
+By default the project uses the local `mock` provider and does not call an external API. Configure DeepSeek, OpenAI, or an OpenAI-compatible provider only when you want real model calls.
 
 ## 当前版本
 
