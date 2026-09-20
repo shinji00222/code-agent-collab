@@ -277,3 +277,5 @@ pwsh -File scripts/build-exe.ps1
 
 - `版本管理.md`
 - `变更记录.md`
+
+当前后续主线已经收束为 **Multi-Agent Software Engineering System**：不再横向堆更多 Agent 或花哨入口，优先做 `Stable Coding Loop -> Hierarchical Context -> Evaluation`。详细规划见 `科研路线.md` 和 `版本管理.md`。
