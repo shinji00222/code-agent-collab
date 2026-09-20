@@ -9,6 +9,7 @@ from pathlib import Path
 from .config import save_default_config
 from .control import WorkflowPaused
 from .context_pack import create_context_pack
+from .coding_loop import run_coding_loop
 from .demo import run_demo
 from .mcp_bridge import (
     ENV_SERVERS,
@@ -163,6 +164,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Apply changes, run tests, and commit locally (no push).",
     )
     apply_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root. Defaults to current directory.",
+    )
+
+    coding_loop_parser = subparsers.add_parser(
+        "coding-loop",
+        help="Run plan -> code draft -> review -> diff/apply as one coding loop.",
+    )
+    coding_loop_parser.add_argument("goal", help="Task goal.")
+    coding_loop_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply reviewed draft, run tests, and commit locally. Default only previews diff.",
+    )
+    coding_loop_parser.add_argument(
         "--project-root",
         default=".",
         help="Project root. Defaults to current directory.",
@@ -438,6 +455,32 @@ def main(argv: list[str] | None = None) -> int:
             print(f"===== {path} =====")
             print(diff or "（新文件或无差异）")
         print(f"[{result.stage}] {'成功' if result.ok else '失败'}：{result.message}")
+        return 0 if result.ok else 1
+
+    if args.command == "coding-loop":
+        try:
+            result = run_coding_loop(project_root, args.goal, apply=args.apply)
+        except WorkflowPaused as exc:
+            print(f"工作流已暂停：{exc}")
+            return 3
+        except (ValueError, FileNotFoundError, RuntimeError) as exc:
+            print(f"无法运行 coding loop：{exc}")
+            return 2
+        print("Coding Loop 已运行。")
+        print(f"任务ID：{result.workflow.task_id}")
+        print(f"工作流日志：{result.workflow.workflow_log_path}")
+        if result.draft_path:
+            print(f"草稿：{result.draft_path}")
+        if result.apply_result:
+            for path, diff in result.apply_result.diffs:
+                print(f"===== {path} =====")
+                print(diff or "（新文件或无差异）")
+            print(
+                f"[{result.apply_result.stage}] "
+                f"{'成功' if result.apply_result.ok else '失败'}：{result.apply_result.message}"
+            )
+        else:
+            print(f"[应用前检查] {'成功' if result.ok else '失败'}：{result.message}")
         return 0 if result.ok else 1
 
     if args.command == "mcp":

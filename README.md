@@ -9,9 +9,9 @@
 
 ## 当前版本
 
-当前版本：`v0.15.2`（安全修复版）
+当前版本：`v0.16.0`（Stable Coding Loop 开发版）
 
-阶段定位：**项目自有知识库全隔离（默认不读不写外部知识库）** + 只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + WebView 本地软件窗口 + 草稿应用实验能力 + **MCP 工具接入**。
+阶段定位：**Stable Coding Loop 最小入口** + 项目自有知识库全隔离（默认不读不写外部知识库）+ 只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + WebView 本地软件窗口 + 草稿应用实验能力 + MCP 工具接入。
 
 ## MCP 工具接入（v0.15.0 新增）
 
@@ -95,6 +95,7 @@ python -m code_agent_collab.cli run-adaptive "任务目标"
 python -m code_agent_collab.cli plans
 python -m code_agent_collab.cli approve "任务ID或关键词"
 python -m code_agent_collab.cli apply-draft "任务ID或关键词" [--apply]
+python -m code_agent_collab.cli coding-loop "任务目标" [--apply]
 python -m code_agent_collab.cli provider
 python -m code_agent_collab.desktop
 python -m code_agent_collab.webui
@@ -114,6 +115,7 @@ python -m code_agent_collab.webui
 - `plans`：列出已保存的主控方案，显示任务、复杂度、worker 数量和状态（待批准/已执行）。
 - `approve`：人工批准 `run-adaptive` 生成的方案，批准后执行 workers（阶段间串行、阶段内并行），产出工作流日志与候选复盘。
 - `apply-draft`：解析 Coder/Integrator 草稿并预览 diff（dry-run，不写文件）；草稿必须满足“修改文件清单”和“建议代码”路径一致，并通过评审闸门；加 `--apply` 后先复制临时隔离副本并在副本里跑测试，通过后才应用到正式项目 → 正式测试 → 测试通过自动本地 commit（失败自动回滚）。只允许改 `src/`、`tests/` 下文本文件。
+- `coding-loop`：v0.16 最小编码闭环入口，把“生成方案 → 执行 Coder/Reviewer → 找到通过评审的草稿 → 预览 diff”串成一条命令；默认只 dry-run，不写文件。加 `--apply` 后复用 `apply-draft` 的安全闸门、隔离测试、正式测试、失败回滚和本地提交。
 - `provider`：查看当前 AI Provider 配置和可用 Provider 列表；默认显示本地模拟 Provider。真实 Provider 调用支持超时、429/5xx/网络临时失败重试和响应结构校验。
 - `desktop`：启动本地桌面窗口，提供 Provider 检查、方案列表、生成主控方案、开始协同工作、暂停和强制停止按钮；右侧显示最近主控方案和当前运行进度；后台复用现有 CLI，不打开浏览器。
 - `webui`：启动本机网页终端（默认 http://127.0.0.1:8080），在浏览器里输入命令；页面是纯终端风格，并用树状图实时显示当前 Agent 进度。直接输入普通内容时先进入单 AI 需求讨论；点“生成主控方案”才生成方案；点“开始协同工作”才批准并执行后续 Agent；命令会提交为后台 job，页面轮询 job 状态和进度；点“暂停工作”会在阶段边界保存断点并暂停；页面检测到断点后可点“继续暂停任务”从下一阶段恢复；点“强制停止”会经多重确认后立即中断后台进程但不删除 API key。
