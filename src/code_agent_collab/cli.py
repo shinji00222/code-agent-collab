@@ -468,6 +468,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print("Coding Loop 已运行。")
         print(f"任务ID：{result.workflow.task_id}")
+        print(f"尝试次数：{len(result.attempts)}")
         print(f"工作流日志：{result.workflow.workflow_log_path}")
         if result.draft_path:
             print(f"草稿：{result.draft_path}")

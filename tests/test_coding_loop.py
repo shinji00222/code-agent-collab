@@ -34,6 +34,20 @@ class BadSimpleProvider(AIProvider):
         return "模拟 AI 已收到任务：" + user_prompt
 
 
+class FailingThenFixedProvider(AIProvider):
+    name = "test-retry"
+
+    def complete(self, system_prompt: str, user_prompt: str) -> str:
+        del system_prompt
+        if "几个 worker" in user_prompt:
+            return "SIMPLE"
+        if "代码实现草稿" in user_prompt:
+            if "上一轮 apply-draft 失败" in user_prompt:
+                return _valid_test_draft()
+            return _failing_test_draft()
+        return "模拟 AI 已收到任务：" + user_prompt
+
+
 def _valid_test_draft() -> str:
     return """## 修改文件清单
 - tests/test_generated_loop.py（新增）
@@ -52,6 +66,27 @@ class GeneratedLoopTests(unittest.TestCase):
 运行 python -m unittest discover -s tests。
 ## 风险
 只新增一个自包含测试文件，不影响运行时代码。
+"""
+
+
+def _failing_test_draft() -> str:
+    return """## 修改文件清单
+- tests/test_generated_loop.py（新增）
+## 修改原因
+先生成一个格式合格但测试会失败的草稿，用于验证 coding loop 是否会把测试反馈交回 Coder。
+## 建议代码
+### tests/test_generated_loop.py
+import unittest
+
+
+class GeneratedLoopTests(unittest.TestCase):
+    def test_generated_loop(self) -> None:
+        self.assertEqual(1 + 1, 3)
+
+## 测试方法
+运行 python -m unittest discover -s tests。
+## 风险
+这是一个故意失败的测试草稿，只用于验证自动返工流程。
 """
 
 
@@ -112,6 +147,20 @@ class CodingLoopTests(unittest.TestCase):
                 errors="replace",
             ).stdout
             self.assertIn("apply-draft", log)
+
+    def test_coding_loop_apply_retries_once_after_test_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            with patch("code_agent_collab.orchestration.create_provider", return_value=FailingThenFixedProvider()):
+                result = run_coding_loop(root, "新增一个最小测试", apply=True)
+
+            self.assertTrue(result.ok, result.message)
+            self.assertEqual(len(result.attempts), 2)
+            self.assertEqual(result.attempts[0].apply_result.stage, "隔离测试")
+            feedback_context = result.attempts[1].workflow.context_pack.output_path.read_text(encoding="utf-8")
+            self.assertIn("上一轮 apply-draft 失败", feedback_context)
+            generated = (root / "tests" / "test_generated_loop.py").read_text(encoding="utf-8")
+            self.assertIn("self.assertEqual(1 + 1, 2)", generated)
 
     def test_coding_loop_stops_before_apply_when_review_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
