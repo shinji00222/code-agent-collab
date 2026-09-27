@@ -52,7 +52,12 @@ def run_coding_loop(project_root: Path, goal: str, apply: bool = False) -> Codin
             )
 
         draft_path = find_draft_path(project_root, workflow.task_id)
-        apply_result = apply_draft_workflow(project_root, draft_path, apply=apply)
+        apply_result = apply_draft_workflow(
+            project_root,
+            draft_path,
+            apply=apply,
+            require_approval=False,
+        )
         attempts.append(CodingLoopAttempt(workflow, draft_path, apply_result, apply_result.message))
         if (
             apply

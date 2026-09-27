@@ -197,8 +197,48 @@ class ApplyDraftTests(unittest.TestCase):
 
             self.assertTrue(result.ok)
             self.assertIn("dry-run", result.stage)
+            self.assertIn("已保存批准基线", result.message)
             self.assertTrue(result.diffs)
+            self.assertTrue(
+                (
+                    root
+                    / "logs"
+                    / "approvals"
+                    / "20260101-000000-任务A-coder-draft.json"
+                ).exists()
+            )
             # 文件未被修改
+            self.assertIn("test_ok", (root / "tests" / "test_sample.py").read_text(encoding="utf-8"))
+
+    def test_apply_requires_prior_dry_run_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            _init_git(root)
+            draft_path = _write_draft(root, _make_draft({"tests/test_sample.py": PASS_TEST}))
+
+            result = apply_draft_workflow(root, draft_path, apply=True)
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.stage, "批准基线")
+            self.assertIn("未找到 dry-run 批准基线", result.message)
+
+    def test_apply_rejects_changed_target_after_dry_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            _init_git(root)
+            draft_path = _write_draft(root, _make_draft({"tests/test_sample.py": PASS_TEST}))
+            apply_draft_workflow(root, draft_path, apply=False)
+            (root / "tests" / "test_sample.py").write_text(
+                PASS_TEST + "\n# changed after preview\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+
+            result = apply_draft_workflow(root, draft_path, apply=True)
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.stage, "批准基线")
+            self.assertIn("目标文件已变化：tests/test_sample.py", result.message)
             self.assertIn("test_ok", (root / "tests" / "test_sample.py").read_text(encoding="utf-8"))
 
     def test_apply_with_failing_isolated_tests_does_not_write_formal_files(self) -> None:
@@ -206,6 +246,7 @@ class ApplyDraftTests(unittest.TestCase):
             root = _make_project(tmp)
             (root / "tests" / "test_sample.py").write_text(PASS_TEST, encoding="utf-8")
             draft_path = _write_draft(root, _make_draft({"tests/test_sample.py": FAIL_TEST}))
+            apply_draft_workflow(root, draft_path, apply=False)
 
             result = apply_draft_workflow(root, draft_path, apply=True)
 
@@ -221,11 +262,13 @@ class ApplyDraftTests(unittest.TestCase):
             draft_path = _write_draft(root, _make_draft({"tests/test_sample.py": FAIL_TEST}))
 
             # 先应用一次失败测试（会回滚，工作区保持干净）
+            apply_draft_workflow(root, draft_path, apply=False)
             apply_draft_workflow(root, draft_path, apply=True)
             # 改成通过版再应用
             draft_path = _write_draft(
                 root, _make_draft({"tests/test_sample.py": PASS_TEST}), name="20260101-000001-任务B-coder-draft.md"
             )
+            apply_draft_workflow(root, draft_path, apply=False)
             result = apply_draft_workflow(root, draft_path, apply=True)
 
             self.assertTrue(result.ok)
@@ -242,6 +285,7 @@ class ApplyDraftTests(unittest.TestCase):
             _init_git(root)
             (root / "tests" / "extra.py").write_text("x = 1\n", encoding="utf-8")  # 未提交改动
             draft_path = _write_draft(root, _make_draft({"tests/test_sample.py": PASS_TEST}))
+            apply_draft_workflow(root, draft_path, apply=False)
 
             result = apply_draft_workflow(root, draft_path, apply=True)
 
@@ -296,6 +340,7 @@ class SampleTests(unittest.TestCase):
             draft_path = _write_draft(
                 root, _make_draft({"tests/test_sample.py": side_effect_test})
             )
+            apply_draft_workflow(root, draft_path, apply=False)
 
             result = apply_draft_workflow(root, draft_path, apply=True)
 

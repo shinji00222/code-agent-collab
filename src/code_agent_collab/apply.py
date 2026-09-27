@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import difflib
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -8,10 +10,11 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from .config import load_config
-from .file_utils import read_text, write_text
+from .file_utils import ensure_dir, read_text, write_text
 from .review import scan_sensitive
 
 # apply-draft 允许写入的目录（相对项目根）；其他区域一律拒绝
@@ -26,6 +29,7 @@ SECTION_RISK = "## 风险"
 
 DRAFT_GLOB = "*-coder-draft*.md"
 TEST_TIMEOUT_SECONDS = 120
+APPROVAL_SCHEMA_VERSION = 1
 
 # 兜底合并草稿的状态标记：Integrator 没能产出可解析的合并草稿时会生成这种
 # 兜底说明。它结构上是合法的，但内容只是把原始草稿堆在一起，绝不能当成
@@ -352,6 +356,116 @@ def git_is_clean(project_root: Path) -> bool:
     return not git_status_porcelain(project_root)
 
 
+def _git_head(project_root: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except FileNotFoundError:
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_text(text: str) -> str:
+    return _sha256_bytes(text.encode("utf-8"))
+
+
+def _file_sha256(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    return _sha256_bytes(path.read_bytes())
+
+
+def _approval_path(project_root: Path, draft_path: Path) -> Path:
+    return project_root / "logs" / "approvals" / f"{draft_path.stem}.json"
+
+
+def _approval_payload(
+    project_root: Path,
+    draft_path: Path,
+    changes: list[DraftChange],
+    diffs: list[tuple[str, str]],
+) -> dict:
+    return {
+        "schemaVersion": APPROVAL_SCHEMA_VERSION,
+        "createdAt": datetime.now().isoformat(timespec="seconds"),
+        "gitHead": _git_head(project_root),
+        "draftPath": draft_path.relative_to(project_root).as_posix()
+        if draft_path.is_relative_to(project_root)
+        else str(draft_path),
+        "draftSha256": _file_sha256(draft_path),
+        "targets": [
+            {
+                "path": change.path,
+                "sha256": _file_sha256(project_root / change.path),
+            }
+            for change in changes
+        ],
+        "diffSha256": _sha256_text("\n".join(diff for _, diff in diffs)),
+    }
+
+
+def _write_approval(
+    project_root: Path,
+    draft_path: Path,
+    changes: list[DraftChange],
+    diffs: list[tuple[str, str]],
+) -> Path:
+    path = _approval_path(project_root, draft_path)
+    ensure_dir(path.parent)
+    payload = _approval_payload(project_root, draft_path, changes, diffs)
+    write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    return path
+
+
+def _validate_approval(
+    project_root: Path,
+    draft_path: Path,
+    changes: list[DraftChange],
+    diffs: list[tuple[str, str]],
+) -> list[str]:
+    path = _approval_path(project_root, draft_path)
+    if not path.exists():
+        return [
+            "未找到 dry-run 批准基线，请先执行 "
+            f"apply-draft {draft_path.stem} 预览并确认 diff。"
+        ]
+    try:
+        payload = json.loads(read_text(path))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"批准基线文件无法读取：{exc}"]
+    expected = _approval_payload(project_root, draft_path, changes, diffs)
+    errors: list[str] = []
+    if payload.get("schemaVersion") != APPROVAL_SCHEMA_VERSION:
+        errors.append("批准基线版本不匹配，请重新 dry-run。")
+    if payload.get("gitHead") != expected["gitHead"]:
+        errors.append("Git HEAD 已变化，请重新 dry-run 预览。")
+    if payload.get("draftSha256") != expected["draftSha256"]:
+        errors.append("草稿文件已变化，请重新 dry-run 预览。")
+    if payload.get("diffSha256") != expected["diffSha256"]:
+        errors.append("diff 摘要已变化，请重新 dry-run 预览。")
+    previous_targets = {
+        str(item.get("path")): item.get("sha256")
+        for item in payload.get("targets", [])
+        if isinstance(item, dict)
+    }
+    for target in expected["targets"]:
+        path_text = target["path"]
+        if previous_targets.get(path_text) != target["sha256"]:
+            errors.append(f"目标文件已变化：{path_text}，请重新 dry-run 预览。")
+    return errors
+
+
 def run_tests(project_root: Path, timeout_seconds: int = TEST_TIMEOUT_SECONDS) -> tuple[int, str]:
     env = _test_env(project_root)
     try:
@@ -501,7 +615,13 @@ def _rollback_changes(project_root: Path, backup: dict[str, str | None]) -> None
             write_text(target, old)
 
 
-def apply_draft_workflow(project_root: Path, draft_path: Path, apply: bool) -> ApplyResult:
+def apply_draft_workflow(
+    project_root: Path,
+    draft_path: Path,
+    apply: bool,
+    *,
+    require_approval: bool = True,
+) -> ApplyResult:
     """apply-draft 主流程：解析 → 校验 → 预览（或 应用→测试→提交/回滚）。"""
     content = read_text(draft_path)
     parsed = parse_draft(content)
@@ -516,16 +636,29 @@ def apply_draft_workflow(project_root: Path, draft_path: Path, apply: bool) -> A
 
     diffs = generate_diffs(project_root, parsed.changes)
     if not apply:
+        approval_path = _write_approval(project_root, draft_path, parsed.changes, diffs)
         return ApplyResult(
             ok=True,
             stage="预览（dry-run）",
             message=(
                 f"共 {len(parsed.changes)} 个文件改动，未写入任何文件；"
+                f"已保存批准基线：{approval_path}；"
                 f"确认无误后执行：apply-draft {draft_path.stem} --apply"
             ),
             changes=parsed.changes,
             diffs=diffs,
         )
+
+    if require_approval:
+        approval_errors = _validate_approval(project_root, draft_path, parsed.changes, diffs)
+        if approval_errors:
+            return ApplyResult(
+                ok=False,
+                stage="批准基线",
+                message="；".join(approval_errors),
+                changes=parsed.changes,
+                diffs=diffs,
+            )
 
     if not git_is_clean(project_root):
         return ApplyResult(
