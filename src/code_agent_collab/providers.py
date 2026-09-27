@@ -80,6 +80,20 @@ class MockProvider(AIProvider):
 
     def complete(self, system_prompt: str, user_prompt: str) -> str:
         del system_prompt
+        if "代码实现草稿" in user_prompt:
+            return """## 修改文件清单
+- src/example.py（修改）
+## 修改原因
+提供一个本地 mock Provider 可稳定通过评审的最小代码草稿。
+## 建议代码
+### src/example.py
+def answer():
+    return 42
+## 测试方法
+运行 python -m unittest discover -s tests。
+## 风险
+这是 mock Provider 的演示草稿，不代表真实模型已经完成需求。
+"""
         return f"模拟 AI 已收到任务：{user_prompt}"
 
 

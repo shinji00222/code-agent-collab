@@ -1,8 +1,13 @@
 from __future__ import annotations
 
-from ..file_utils import write_text
+from pathlib import Path
+
+from ..file_utils import read_text, write_text
 from ..providers import AIProvider, create_provider
 from .base import AgentContext, AgentResult, BaseAgent, PermissionLevel
+
+
+CONTEXT_PACK_PROMPT_CHARS = 8_000
 
 
 class CoderAgent(BaseAgent):
@@ -52,13 +57,15 @@ class CoderAgent(BaseAgent):
                     "",
                 ]
             )
+        context_excerpt = _context_pack_excerpt(context.context_pack_path)
         draft = self.provider.complete(
             "你是代码草稿 Agent。只能生成草稿，不能直接修改正式项目文件。",
             (
                 f"请根据这个任务生成代码实现草稿：{context.task_goal}\n"
                 f"{duty}"
                 f"{feedback_text}"
-                f"参考上下文包：{context.context_pack_path}\n"
+                f"参考上下文包路径：{context.context_pack_path}\n"
+                f"参考上下文包内容摘录：\n{context_excerpt}\n"
                 "请严格按下面的 Markdown 小节格式输出草稿正文，每个小节标题必须原样保留：\n"
                 "## 修改文件清单\n"
                 "- <文件相对路径>（修改/新增）\n"
@@ -135,3 +142,12 @@ class CoderAgent(BaseAgent):
             risks=["草稿未经验证，不能直接写入正式源码。"],
             next_steps=["交给 ReviewerAgent 评审草稿；评审不通过则由主控决定打回重做。"],
         )
+
+
+def _context_pack_excerpt(path: Path) -> str:
+    if not path.exists():
+        return "上下文包文件不存在，请只依据任务目标生成最小可审查草稿。"
+    text = read_text(path).strip()
+    if len(text) <= CONTEXT_PACK_PROMPT_CHARS:
+        return text
+    return text[:CONTEXT_PACK_PROMPT_CHARS].rstrip() + "\n\n（上下文包内容已截断）"

@@ -29,6 +29,8 @@ class ContextPackTests(unittest.TestCase):
             self.assertIn("Token 预算估算", content)
             self.assertIn("[task] 用户原始请求", content)
             self.assertIn("[repo] Git 分支与状态", content)
+            self.assertIn("相关代码文件", content)
+            self.assertIn("代码文件摘录", content)
             # 上下文包要写清检索来源与写入目标，且默认都指向项目自有知识库
             self.assertIn("知识检索来源", content)
             self.assertIn("知识写入目标", content)
@@ -73,6 +75,44 @@ class ContextPackTests(unittest.TestCase):
             self.assertIn("命中任务关键词", content)
             self.assertIn("### 任务上下文包格式.md", content)
             self.assertNotIn("### 无关文档.md", content)
+
+    def test_context_pack_selects_relevant_code_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / "product-docs").mkdir()
+            src_dir = project_root / "src" / "code_agent_collab"
+            tests_dir = project_root / "tests"
+            src_dir.mkdir(parents=True)
+            tests_dir.mkdir()
+            (src_dir / "context_pack.py").write_text(
+                "def build_context_pack(project_root, goal):\n"
+                "    return 'context selection budget'\n",
+                encoding="utf-8",
+            )
+            (tests_dir / "test_context_pack.py").write_text(
+                "def test_context_pack_selects_code_files():\n"
+                "    assert True\n",
+                encoding="utf-8",
+            )
+            (src_dir / "unrelated.py").write_text(
+                "def paint_button_color():\n"
+                "    return 'purple'\n",
+                encoding="utf-8",
+            )
+
+            _, content = build_context_pack(
+                project_root,
+                "修改 context_pack 并补测试",
+                now=datetime(2026, 9, 27, 11, 0, 0),
+            )
+
+            self.assertIn("[code] src/code_agent_collab/context_pack.py", content)
+            self.assertIn("[code] tests/test_context_pack.py", content)
+            self.assertIn("### src/code_agent_collab/context_pack.py", content)
+            self.assertIn("### tests/test_context_pack.py", content)
+            self.assertIn("def build_context_pack", content)
+            self.assertIn("代码文件选择上限", content)
+            self.assertNotIn("### src/code_agent_collab/unrelated.py", content)
 
 
 if __name__ == "__main__":

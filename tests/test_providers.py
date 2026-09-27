@@ -52,6 +52,14 @@ class ProviderTests(unittest.TestCase):
         result = MockProvider().complete("system", "检查任务")
         self.assertIn("模拟 AI 已收到任务", result)
 
+    def test_mock_provider_returns_valid_coder_draft(self) -> None:
+        result = MockProvider().complete("system", "请生成代码实现草稿")
+
+        self.assertIn("## 修改文件清单", result)
+        self.assertIn("## 建议代码", result)
+        self.assertIn("### src/example.py", result)
+        self.assertIn("python -m unittest discover -s tests", result)
+
     def test_deepseek_preset_uses_safe_defaults(self) -> None:
         with patch.dict(os.environ, {"AGENT_WORKBENCH_PROVIDER": "deepseek"}, clear=True):
             config = ProviderConfig.from_env()

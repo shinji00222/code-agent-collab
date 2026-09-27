@@ -25,6 +25,14 @@ class SelectedContextDoc:
 
 
 @dataclass(frozen=True)
+class SelectedCodeFile:
+    path: str
+    content: str
+    reason: str
+    estimated_tokens: int
+
+
+@dataclass(frozen=True)
 class ContextSelectionItem:
     layer: str
     source: str
@@ -33,7 +41,10 @@ class ContextSelectionItem:
 
 
 MAX_CONTEXT_DOCS = 6
+MAX_CONTEXT_CODE_FILES = 8
 DOC_EXCERPT_CHARS = 1200
+CODE_EXCERPT_CHARS = 900
+CODE_FILE_MAX_BYTES = 80_000
 
 
 def _git_value(project_root: Path, args: list[str], fallback: str) -> str:
@@ -65,10 +76,35 @@ def _read_project_docs(project_root: Path) -> list[tuple[str, str]]:
     return docs
 
 
+def _read_code_files(project_root: Path) -> list[tuple[str, str]]:
+    files: list[tuple[str, str]] = []
+    for folder in ("src", "tests"):
+        base = project_root / folder
+        if not base.exists():
+            continue
+        for path in sorted(base.rglob("*.py"), key=lambda item: item.as_posix().lower()):
+            if "__pycache__" in path.parts:
+                continue
+            try:
+                if path.stat().st_size > CODE_FILE_MAX_BYTES:
+                    continue
+                content = read_text(path).strip()
+            except (OSError, UnicodeDecodeError):
+                continue
+            files.append((path.relative_to(project_root).as_posix(), content))
+    return files
+
+
 def _doc_excerpt(content: str, max_chars: int = 1200) -> str:
     if len(content) <= max_chars:
         return content
     return content[:max_chars].rstrip() + "\n\n...（已截断，原文仍在 product-docs 中）"
+
+
+def _code_excerpt(content: str, max_chars: int = CODE_EXCERPT_CHARS) -> str:
+    if len(content) <= max_chars:
+        return content
+    return content[:max_chars].rstrip() + "\n\n...（已截断，原代码文件仍在项目中）"
 
 
 def _estimate_tokens(text: str) -> int:
@@ -82,11 +118,11 @@ def _task_keywords(task_goal: str) -> list[str]:
     phrases = re.findall(r"[\u4e00-\u9fff]{2,12}", task_goal)
     keywords = words + phrases
     if "上下文" in task_goal or "context" in lowered:
-        keywords.extend(["上下文", "context", "任务上下文包", "知识库", "memory"])
+        keywords.extend(["上下文", "context", "context_pack", "任务上下文包", "知识库", "memory"])
     if "测试" in task_goal or "test" in lowered:
-        keywords.extend(["测试", "验证", "test"])
+        keywords.extend(["测试", "验证", "test", "tests"])
     if "代码" in task_goal or "coding" in lowered or "coding-loop" in lowered:
-        keywords.extend(["代码", "coding", "apply-draft", "Agent"])
+        keywords.extend(["代码", "coding", "src", "tests", "apply-draft", "Agent"])
     return list(dict.fromkeys(keywords))
 
 
@@ -136,11 +172,54 @@ def _select_context_docs(docs: list[tuple[str, str]], task_goal: str) -> list[Se
     return selected
 
 
+def _select_code_files(files: list[tuple[str, str]], task_goal: str) -> list[SelectedCodeFile]:
+    keywords = _task_keywords(task_goal)
+    scored: list[tuple[int, str, str, str]] = []
+    for path, content in files:
+        score, reason = _score_code_file(path, content, keywords)
+        if score > 0:
+            scored.append((score, path, content, reason))
+    scored.sort(key=lambda item: (-item[0], item[1].lower()))
+    selected = []
+    for _, path, content, reason in scored[:MAX_CONTEXT_CODE_FILES]:
+        selected.append(
+            SelectedCodeFile(
+                path=path,
+                content=content,
+                reason=reason,
+                estimated_tokens=_estimate_tokens(_code_excerpt(content, CODE_EXCERPT_CHARS)),
+            )
+        )
+    return selected
+
+
+def _score_code_file(path: str, content: str, keywords: list[str]) -> tuple[int, str]:
+    searchable = f"{path}\n{content}".lower()
+    normalized_path = path.lower().replace("\\", "/")
+    score = 0
+    matched: list[str] = []
+    for keyword in keywords:
+        lowered = keyword.lower()
+        if not lowered:
+            continue
+        if lowered in normalized_path:
+            score += 7
+            matched.append(keyword)
+        elif lowered in searchable:
+            score += 1
+            matched.append(keyword)
+    if score == 0:
+        return 0, "未命中任务关键词，未进入本轮代码上下文。"
+    unique = "、".join(list(dict.fromkeys(matched))[:4])
+    return score, f"命中任务关键词：{unique}"
+
+
 def _context_selection_items(
     task_goal: str,
     branch: str,
     git_status: str,
     selected_docs: list[SelectedContextDoc],
+    selected_code_files: list[SelectedCodeFile],
 ) -> list[ContextSelectionItem]:
     items = [
         ContextSelectionItem(
@@ -165,6 +244,15 @@ def _context_selection_items(
                 estimated_tokens=doc.estimated_tokens,
             )
         )
+    for code_file in selected_code_files:
+        items.append(
+            ContextSelectionItem(
+                layer="code",
+                source=code_file.path,
+                reason=code_file.reason,
+                estimated_tokens=code_file.estimated_tokens,
+            )
+        )
     return items
 
 
@@ -175,8 +263,16 @@ def build_context_pack(project_root: Path, task_goal: str, now: datetime | None 
     branch = _git_value(project_root, ["rev-parse", "--abbrev-ref", "HEAD"], "未能获取")
     git_status = _git_value(project_root, ["status", "--short"], "干净或未能获取")
     docs = _read_project_docs(project_root)
+    code_files = _read_code_files(project_root)
     selected_docs = _select_context_docs(docs, task_goal)
-    selection_items = _context_selection_items(task_goal, branch, git_status, selected_docs)
+    selected_code_files = _select_code_files(code_files, task_goal)
+    selection_items = _context_selection_items(
+        task_goal,
+        branch,
+        git_status,
+        selected_docs,
+        selected_code_files,
+    )
 
     return task_id, _render_context_pack(
         task_id=task_id,
@@ -186,6 +282,7 @@ def build_context_pack(project_root: Path, task_goal: str, now: datetime | None 
         branch=branch,
         git_status=git_status,
         docs=selected_docs,
+        code_files=selected_code_files,
         selection_items=selection_items,
         now=now,
     )
@@ -199,6 +296,7 @@ def _render_context_pack(
     branch: str,
     git_status: str,
     docs: list[SelectedContextDoc],
+    code_files: list[SelectedCodeFile],
     selection_items: list[ContextSelectionItem],
     now: datetime,
 ) -> str:
@@ -206,6 +304,14 @@ def _render_context_pack(
     docs_content = "\n\n".join(
         f"### {doc.name}\n\n{_doc_excerpt(doc.content, DOC_EXCERPT_CHARS)}" for doc in docs
     ) or "未读取到项目文档。"
+    code_index = (
+        "\n".join(f"- {code_file.path}（{code_file.reason}）" for code_file in code_files)
+        or "- 未命中相关代码文件"
+    )
+    code_content = "\n\n".join(
+        f"### {code_file.path}\n\n```python\n{_code_excerpt(code_file.content)}\n```"
+        for code_file in code_files
+    ) or "未读取到相关代码文件。"
     selection_log = "\n".join(
         f"- [{item.layer}] {item.source}：{item.reason}（约 {item.estimated_tokens} tokens）"
         for item in selection_items
@@ -240,6 +346,7 @@ def _render_context_pack(
 
 - 已选上下文约：{token_budget} tokens。
 - 项目文档选择上限：最多 {MAX_CONTEXT_DOCS} 个文档，每篇摘录最多 {DOC_EXCERPT_CHARS} 字符。
+- 代码文件选择上限：最多 {MAX_CONTEXT_CODE_FILES} 个 Python 文件，每个摘录最多 {CODE_EXCERPT_CHARS} 字符。
 - 说明：这是本地粗略估算，用于控制上下文规模，不等同于真实 API 计费。
 
 ## 相关项目文档
@@ -250,9 +357,17 @@ def _render_context_pack(
 
 {docs_content}
 
+## 相关代码文件
+
+{code_index}
+
+## 代码文件摘录
+
+{code_content}
+
 ## 执行计划
 
-- 要做什么：围绕用户任务整理项目规则、知识库边界、Git 状态和相关文档。
+- 要做什么：围绕用户任务整理项目规则、知识库边界、Git 状态、相关文档和相关代码文件。
 - 不做什么：不调用真实 AI API；不修改主知识库；不执行部署、删除、推送等高风险操作。
 - 风险点：如果项目文档不完整，上下文包只能反映当前已有文档。
 - 需要用户确认的操作：任何写入主知识库、删除、移动、上传、部署或推送操作。
