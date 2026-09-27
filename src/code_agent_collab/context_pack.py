@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,6 +14,26 @@ from .file_utils import ensure_dir, read_text, simple_task_slug, write_text
 class ContextPackResult:
     task_id: str
     output_path: Path
+
+
+@dataclass(frozen=True)
+class SelectedContextDoc:
+    name: str
+    content: str
+    reason: str
+    estimated_tokens: int
+
+
+@dataclass(frozen=True)
+class ContextSelectionItem:
+    layer: str
+    source: str
+    reason: str
+    estimated_tokens: int
+
+
+MAX_CONTEXT_DOCS = 6
+DOC_EXCERPT_CHARS = 1200
 
 
 def _git_value(project_root: Path, args: list[str], fallback: str) -> str:
@@ -50,6 +71,103 @@ def _doc_excerpt(content: str, max_chars: int = 1200) -> str:
     return content[:max_chars].rstrip() + "\n\n...（已截断，原文仍在 product-docs 中）"
 
 
+def _estimate_tokens(text: str) -> int:
+    # 粗略预算只用于上下文选择记录，不等同于真实 Provider 计费。
+    return max(1, (len(text) + 3) // 4)
+
+
+def _task_keywords(task_goal: str) -> list[str]:
+    lowered = task_goal.lower()
+    words = [item for item in re.split(r"[\W_]+", lowered) if len(item) >= 2]
+    phrases = re.findall(r"[\u4e00-\u9fff]{2,12}", task_goal)
+    keywords = words + phrases
+    if "上下文" in task_goal or "context" in lowered:
+        keywords.extend(["上下文", "context", "任务上下文包", "知识库", "memory"])
+    if "测试" in task_goal or "test" in lowered:
+        keywords.extend(["测试", "验证", "test"])
+    if "代码" in task_goal or "coding" in lowered or "coding-loop" in lowered:
+        keywords.extend(["代码", "coding", "apply-draft", "Agent"])
+    return list(dict.fromkeys(keywords))
+
+
+def _score_doc(name: str, content: str, keywords: list[str]) -> tuple[int, str]:
+    searchable = f"{name}\n{content}".lower()
+    score = 0
+    matched: list[str] = []
+    for keyword in keywords:
+        lowered = keyword.lower()
+        if not lowered:
+            continue
+        if lowered in name.lower():
+            score += 5
+            matched.append(keyword)
+        elif lowered in searchable:
+            score += 1
+            matched.append(keyword)
+    if score == 0:
+        return 0, "未命中任务关键词，未进入本轮上下文。"
+    unique = "、".join(list(dict.fromkeys(matched))[:4])
+    return score, f"命中任务关键词：{unique}"
+
+
+def _select_context_docs(docs: list[tuple[str, str]], task_goal: str) -> list[SelectedContextDoc]:
+    keywords = _task_keywords(task_goal)
+    scored: list[tuple[int, str, str, str]] = []
+    for name, content in docs:
+        score, reason = _score_doc(name, content, keywords)
+        if score > 0:
+            scored.append((score, name, content, reason))
+    if not scored:
+        scored = [
+            (1, name, content, "未命中关键词，作为基础项目文档保底选择。")
+            for name, content in docs[:MAX_CONTEXT_DOCS]
+        ]
+    scored.sort(key=lambda item: (-item[0], item[1].lower()))
+    selected = []
+    for _, name, content, reason in scored[:MAX_CONTEXT_DOCS]:
+        selected.append(
+            SelectedContextDoc(
+                name=name,
+                content=content,
+                reason=reason,
+                estimated_tokens=_estimate_tokens(_doc_excerpt(content, DOC_EXCERPT_CHARS)),
+            )
+        )
+    return selected
+
+
+def _context_selection_items(
+    task_goal: str,
+    branch: str,
+    git_status: str,
+    selected_docs: list[SelectedContextDoc],
+) -> list[ContextSelectionItem]:
+    items = [
+        ContextSelectionItem(
+            layer="task",
+            source="用户原始请求",
+            reason="本轮任务目标，所有后续上下文都围绕它选择。",
+            estimated_tokens=_estimate_tokens(task_goal),
+        ),
+        ContextSelectionItem(
+            layer="repo",
+            source="Git 分支与状态",
+            reason="判断当前代码基线、脏工作区和可否安全应用改动。",
+            estimated_tokens=_estimate_tokens(branch + git_status),
+        ),
+    ]
+    for doc in selected_docs:
+        items.append(
+            ContextSelectionItem(
+                layer="project-doc",
+                source=f"product-docs/{doc.name}",
+                reason=doc.reason,
+                estimated_tokens=doc.estimated_tokens,
+            )
+        )
+    return items
+
+
 def build_context_pack(project_root: Path, task_goal: str, now: datetime | None = None) -> tuple[str, str]:
     now = now or datetime.now()
     cfg = load_config(project_root)
@@ -57,6 +175,8 @@ def build_context_pack(project_root: Path, task_goal: str, now: datetime | None 
     branch = _git_value(project_root, ["rev-parse", "--abbrev-ref", "HEAD"], "未能获取")
     git_status = _git_value(project_root, ["status", "--short"], "干净或未能获取")
     docs = _read_project_docs(project_root)
+    selected_docs = _select_context_docs(docs, task_goal)
+    selection_items = _context_selection_items(task_goal, branch, git_status, selected_docs)
 
     return task_id, _render_context_pack(
         task_id=task_id,
@@ -65,7 +185,8 @@ def build_context_pack(project_root: Path, task_goal: str, now: datetime | None 
         cfg=cfg,
         branch=branch,
         git_status=git_status,
-        docs=docs,
+        docs=selected_docs,
+        selection_items=selection_items,
         now=now,
     )
 
@@ -77,13 +198,19 @@ def _render_context_pack(
     cfg: WorkbenchConfig,
     branch: str,
     git_status: str,
-    docs: list[tuple[str, str]],
+    docs: list[SelectedContextDoc],
+    selection_items: list[ContextSelectionItem],
     now: datetime,
 ) -> str:
-    docs_index = "\n".join(f"- {name}" for name, _ in docs) or "- 未找到项目文档"
+    docs_index = "\n".join(f"- {doc.name}（{doc.reason}）" for doc in docs) or "- 未找到项目文档"
     docs_content = "\n\n".join(
-        f"### {name}\n\n{_doc_excerpt(content)}" for name, content in docs
+        f"### {doc.name}\n\n{_doc_excerpt(doc.content, DOC_EXCERPT_CHARS)}" for doc in docs
     ) or "未读取到项目文档。"
+    selection_log = "\n".join(
+        f"- [{item.layer}] {item.source}：{item.reason}（约 {item.estimated_tokens} tokens）"
+        for item in selection_items
+    )
+    token_budget = sum(item.estimated_tokens for item in selection_items)
 
     return f"""# 任务上下文包：{task_goal}
 
@@ -104,6 +231,16 @@ def _render_context_pack(
 - dev-vault 可读写范围：{cfg.dev_vault_path}
 - 本次禁止读取的范围：未授权的隐私、账号、密钥、令牌、Cookie。
 - 本次禁止写入的范围：项目自有知识库以外的任何知识库（默认读写都只在项目内进行）。
+
+## 上下文选择记录
+
+{selection_log}
+
+## Token 预算估算
+
+- 已选上下文约：{token_budget} tokens。
+- 项目文档选择上限：最多 {MAX_CONTEXT_DOCS} 个文档，每篇摘录最多 {DOC_EXCERPT_CHARS} 字符。
+- 说明：这是本地粗略估算，用于控制上下文规模，不等同于真实 API 计费。
 
 ## 相关项目文档
 

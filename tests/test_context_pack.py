@@ -25,6 +25,10 @@ class ContextPackTests(unittest.TestCase):
             self.assertTrue(task_id.startswith("20260818-224000-"))
             self.assertIn("测试任务", content)
             self.assertIn("项目定义.md", content)
+            self.assertIn("上下文选择记录", content)
+            self.assertIn("Token 预算估算", content)
+            self.assertIn("[task] 用户原始请求", content)
+            self.assertIn("[repo] Git 分支与状态", content)
             # 上下文包要写清检索来源与写入目标，且默认都指向项目自有知识库
             self.assertIn("知识检索来源", content)
             self.assertIn("知识写入目标", content)
@@ -44,6 +48,31 @@ class ContextPackTests(unittest.TestCase):
             self.assertTrue(result.output_path.exists())
             self.assertEqual(result.output_path.parent, project_root / "logs" / "context-packs")
             self.assertIn("写一个上下文包", result.output_path.read_text(encoding="utf-8"))
+
+    def test_context_pack_selects_relevant_project_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            docs_dir = project_root / "product-docs"
+            docs_dir.mkdir()
+            (docs_dir / "任务上下文包格式.md").write_text(
+                "# 任务上下文包格式\n\n记录上下文选择、token 预算和知识库边界。",
+                encoding="utf-8",
+            )
+            (docs_dir / "无关文档.md").write_text(
+                "# 无关文档\n\n这里只描述桌面颜色和按钮位置。",
+                encoding="utf-8",
+            )
+
+            _, content = build_context_pack(
+                project_root,
+                "实现 v0.17 上下文选择记录和 token 预算",
+                now=datetime(2026, 9, 27, 10, 0, 0),
+            )
+
+            self.assertIn("product-docs/任务上下文包格式.md", content)
+            self.assertIn("命中任务关键词", content)
+            self.assertIn("### 任务上下文包格式.md", content)
+            self.assertNotIn("### 无关文档.md", content)
 
 
 if __name__ == "__main__":

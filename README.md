@@ -23,7 +23,7 @@ This project is not trying to add as many agents as possible. The current direct
 - run tests before committing local changes;
 - keep long-term knowledge writes behind explicit confirmation.
 
-Current focus: **Stable Coding Loop -> Hierarchical Context -> Evaluation**.
+Current focus: **Hierarchical Context -> Evaluation**.
 
 Quick start:
 
@@ -38,9 +38,9 @@ By default the project uses the local `mock` provider and does not call an exter
 
 ## 当前版本
 
-当前版本：`v0.16.1`（Stable Coding Loop 开发版）
+当前版本：`v0.17.0`（Hierarchical Context 开发版）
 
-阶段定位：**Stable Coding Loop 最小入口** + 项目自有知识库全隔离（默认不读不写外部知识库）+ 只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + WebView 本地软件窗口 + 草稿应用实验能力 + MCP 工具接入。
+阶段定位：**Hierarchical Context 起步版** + Stable Coding Loop + 项目自有知识库全隔离（默认不读不写外部知识库）+ 只读检索 + 人工确认入库 + 草稿评审 + 半动态主控编排 + WebView 本地软件窗口 + 草稿应用实验能力 + MCP 工具接入。
 
 ## MCP 工具接入（v0.15.0 新增）
 
@@ -132,7 +132,7 @@ python -m code_agent_collab.webui
 
 ## 命令说明
 
-- `start`：生成任务上下文包。
+- `start`：生成任务上下文包，并记录本轮选择了哪些上下文、为什么选、粗略 token 预算。
 - `reflect`：根据上下文包生成候选复利记录。
 - `pending`：列出等待用户确认的候选记录。
 - `review`：AI 审查候选记录；审查通过只标记"待人工确认"并记录 AI 建议的写入位置，**不自动写入主知识库**；命中敏感信息的标记"待人工处理"。
