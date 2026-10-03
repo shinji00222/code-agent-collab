@@ -94,12 +94,14 @@ class ProviderTests(unittest.TestCase):
             "AGENT_WORKBENCH_MODEL": "deepseek-reasoner",
             "AGENT_WORKBENCH_BASE_URL": "https://example.com/v1",
             "AGENT_WORKBENCH_API_KEY_ENV": "MY_CUSTOM_KEY",
+            "AGENT_WORKBENCH_MAX_PROMPT_CHARS": "1234",
         }
         with patch.dict(os.environ, env, clear=True):
             config = ProviderConfig.from_env()
         self.assertEqual(config.model, "deepseek-reasoner")
         self.assertEqual(config.base_url, "https://example.com/v1")
         self.assertEqual(config.api_key_env, "MY_CUSTOM_KEY")
+        self.assertEqual(config.max_prompt_chars, 1234)
 
     def test_real_provider_explains_missing_key_without_network_call(self) -> None:
         provider = OpenAICompatibleProvider(
@@ -119,6 +121,22 @@ class ProviderTests(unittest.TestCase):
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"}, clear=True):
             with patch("code_agent_collab.providers.request.urlopen", return_value=FakeResponse(payload)):
                 self.assertEqual(_provider().complete("system", "user"), "ok")
+
+    def test_real_provider_rejects_prompt_over_budget_before_network_call(self) -> None:
+        provider = OpenAICompatibleProvider(
+            ProviderConfig(
+                name="deepseek",
+                model="deepseek-chat",
+                base_url="https://api.deepseek.com",
+                api_key_env="DEEPSEEK_API_KEY",
+                max_prompt_chars=10,
+            )
+        )
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"}, clear=True):
+            with patch("code_agent_collab.providers.request.urlopen") as urlopen:
+                with self.assertRaisesRegex(ProviderCallError, "超过本地预算"):
+                    provider.complete("system prompt", "user prompt")
+        urlopen.assert_not_called()
 
     def test_real_provider_retries_retryable_http_error(self) -> None:
         payload = b'{"choices":[{"message":{"content":"ok after retry"}}]}'

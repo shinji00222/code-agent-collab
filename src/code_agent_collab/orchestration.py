@@ -32,6 +32,7 @@ from .file_utils import ensure_dir, write_text
 from .progress import publish_progress, role_stage, workflow_tree
 from .providers import AIProvider, create_provider
 from .reflection import ReflectionResult, create_reflection
+from .task_log import TaskLogSnapshot, write_task_log
 from .worker_runs import (
     finish_worker_failed,
     finish_worker_success,
@@ -456,6 +457,17 @@ def _pause_if_requested(
         done=done,
         waiting={"PauseGate", next_role},
     )
+    _write_execution_task_log(
+        project_root,
+        task_id=task_id,
+        goal=goal,
+        status="paused",
+        detail=f"用户已请求暂停，停在 {next_role} 之前。",
+        plan=plan,
+        done_roles=done,
+        blocked=("用户请求暂停",),
+        next_steps=(f"继续时从 {next_role} 前恢复。",),
+    )
     raise WorkflowPaused(f"用户已请求暂停，停在 {next_role} 之前。")
 
 
@@ -595,6 +607,58 @@ def _publish_execution_failure(
         done=done_roles,
         failed=failed_roles,
     )
+    _write_execution_task_log(
+        project_root,
+        task_id=task_id,
+        goal=goal,
+        status="failed",
+        detail=detail,
+        plan=plan,
+        done_roles=done_roles,
+        blocked=tuple(sorted(failed_roles)),
+        next_steps=("查看失败 worker 输出，修正后重新 approve/执行。",),
+    )
+
+
+def _write_execution_task_log(
+    project_root: Path,
+    *,
+    task_id: str,
+    goal: str,
+    status: str,
+    detail: str,
+    plan: OrchestrationPlan | None,
+    done_roles: set[str],
+    blocked: tuple[str, ...] = (),
+    next_steps: tuple[str, ...] = (),
+    outputs: tuple[str, ...] = (),
+) -> None:
+    planned_roles = _planned_role_labels(plan)
+    pending = tuple(role for role in planned_roles if role not in done_roles)
+    write_task_log(
+        project_root,
+        TaskLogSnapshot(
+            task_id=task_id,
+            goal=goal,
+            status=status,
+            detail=detail,
+            completed=tuple(sorted(done_roles)),
+            pending=pending,
+            blocked=blocked,
+            next_steps=next_steps,
+            outputs=outputs,
+        ),
+    )
+
+
+def _planned_role_labels(plan: OrchestrationPlan | None) -> tuple[str, ...]:
+    if plan is None:
+        return ()
+    labels: list[str] = ["ContextPack", "OrchestratorAgent", "ApprovalGate"]
+    for stage in plan.stages:
+        labels.extend(_stage_item(spec, 0)["role"] for spec in stage)
+    labels.extend(["ReflectorAgent", "Done"])
+    return tuple(dict.fromkeys(labels))
 
 
 def _spec_to_json(spec: WorkerSpec) -> dict:
@@ -769,6 +833,17 @@ def create_adaptive_plan(project_root: Path, goal: str) -> AdaptivePlanResult:
         done={"ContextPack", "OrchestratorAgent"},
         waiting={"ApprovalGate"},
     )
+    _write_execution_task_log(
+        project_root,
+        task_id=context_pack.task_id,
+        goal=goal,
+        status="waiting",
+        detail="主控方案已保存，等待 approve 后执行 workers。",
+        plan=plan,
+        done_roles={"ContextPack", "OrchestratorAgent"},
+        next_steps=("人工执行 approve 后开始 worker 阶段。",),
+        outputs=(str(plan_path), str(context_pack.output_path)),
+    )
     return AdaptivePlanResult(
         task_id=context_pack.task_id,
         context_pack=context_pack,
@@ -942,6 +1017,7 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
     latest_integrator_specs = state.latest_integrator_specs
     done_roles = state.done_roles
     start_stage_index = state.start_stage_index
+    review_failed = False
 
     _publish_adaptive(
         project_root,
@@ -951,6 +1027,17 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
         detail=state.resume_detail,
         plan=plan,
         done=done_roles,
+    )
+    _write_execution_task_log(
+        project_root,
+        task_id=task_id,
+        goal=goal,
+        status="running",
+        detail=state.resume_detail,
+        plan=plan,
+        done_roles=done_roles,
+        next_steps=("继续执行未完成 worker 阶段。",),
+        outputs=(str(plan_path), str(context_pack_path)),
     )
     for stage_index, stage in enumerate(plan.stages[start_stage_index:], start=start_stage_index):
         # 把已有 Coder 的负责路径交给 Reviewer，让它能校验草稿有没有越界。
@@ -1050,6 +1137,7 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             stage_index=stage_index,
         )
         if _reviewer_needs_revision(reviewer):
+            review_failed = True
             _publish_adaptive(
                 project_root,
                 task_id=task_id,
@@ -1059,6 +1147,17 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
                 plan=plan,
                 done=done_roles,
                 failed={"ReviewerAgent"},
+            )
+            _write_execution_task_log(
+                project_root,
+                task_id=task_id,
+                goal=goal,
+                status="failed",
+                detail="ReviewerAgent 复审仍未通过，执行停止。",
+                plan=plan,
+                done_roles=done_roles,
+                blocked=("ReviewerAgent",),
+                next_steps=("查看 Reviewer 反馈，修正草稿后重新执行。",),
             )
             break
 
@@ -1074,10 +1173,7 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
 
     workflow_log_path = _write_adaptive_log(project_root, task_id, goal, plan, results)
     reflection = create_reflection(project_root, task_id)
-    if not any(
-        result.role == "ReviewerAgent" and "需修改" in result.summary
-        for result in results[-1:]
-    ):
+    if not review_failed:
         done_roles.update({"ReflectorAgent", "Done"})
         _publish_adaptive(
             project_root,
@@ -1087,6 +1183,17 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             detail="自适应工作流已完成。",
             plan=plan,
             done=done_roles,
+        )
+        _write_execution_task_log(
+            project_root,
+            task_id=task_id,
+            goal=goal,
+            status="done",
+            detail="自适应工作流已完成。",
+            plan=plan,
+            done_roles=done_roles,
+            next_steps=("如需落盘应用草稿，继续走 review/apply/approve 流程。",),
+            outputs=(str(workflow_log_path), str(reflection.output_path)),
         )
         clear_checkpoint(project_root, task_id)
     return AdaptiveWorkflowResult(

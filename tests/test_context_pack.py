@@ -39,6 +39,26 @@ class ContextPackTests(unittest.TestCase):
                 content,
             )
 
+    def test_task_id_includes_microseconds_to_avoid_same_second_collision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / "product-docs").mkdir()
+
+            first_id, _ = build_context_pack(
+                project_root,
+                "连续任务",
+                now=datetime(2026, 10, 3, 12, 0, 0, 1),
+            )
+            second_id, _ = build_context_pack(
+                project_root,
+                "连续任务",
+                now=datetime(2026, 10, 3, 12, 0, 0, 2),
+            )
+
+            self.assertTrue(first_id.startswith("20261003-120000-000001-"))
+            self.assertTrue(second_id.startswith("20261003-120000-000002-"))
+            self.assertNotEqual(first_id, second_id)
+
     def test_create_context_pack_writes_to_logs_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

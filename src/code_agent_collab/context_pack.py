@@ -259,7 +259,7 @@ def _context_selection_items(
 def build_context_pack(project_root: Path, task_goal: str, now: datetime | None = None) -> tuple[str, str]:
     now = now or datetime.now()
     cfg = load_config(project_root)
-    task_id = f"{now:%Y%m%d-%H%M%S}-{simple_task_slug(task_goal)}"
+    task_id = f"{now:%Y%m%d-%H%M%S-%f}-{simple_task_slug(task_goal)}"
     branch = _git_value(project_root, ["rev-parse", "--abbrev-ref", "HEAD"], "未能获取")
     git_status = _git_value(project_root, ["status", "--short"], "干净或未能获取")
     docs = _read_project_docs(project_root)

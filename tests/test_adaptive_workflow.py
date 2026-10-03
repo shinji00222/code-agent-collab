@@ -26,6 +26,7 @@ from code_agent_collab.orchestration import (
     run_adaptive_workflow,
 )
 from code_agent_collab.providers import AIProvider
+from code_agent_collab.task_log import task_log_path
 from code_agent_collab.worker_runs import load_worker_runs
 
 
@@ -102,6 +103,22 @@ class FailingAgent(StaticAgent):
         raise RuntimeError(f"{self.name} 失败")
 
 
+class PassingReviewerWithRiskySummary:
+    role = "ReviewerAgent"
+    permission = PermissionLevel.READ_ONLY
+    last_verdict = "通过"
+
+    def run(self, context: AgentContext, previous_results: list[AgentResult]) -> AgentResult:
+        del context, previous_results
+        return AgentResult(
+            role=self.role,
+            permission=self.permission,
+            summary="评审通过；这里故意提到需修改三个字，不能影响状态机",
+            evidence=["测试 reviewer 状态判定"],
+            outputs=["通过"],
+        )
+
+
 def _valid_draft_text(path: str) -> str:
     return f"""## 修改文件清单
 - {path}（修改）
@@ -162,6 +179,9 @@ class ApprovalGateTests(unittest.TestCase):
             self.assertTrue(result.plan_path.exists())
             # 计划阶段不执行任何 worker：不应产生代码草稿
             self.assertFalse(list((root / "dev-vault" / "projects").glob("*-coder-draft*.md")))
+            task_log = task_log_path(root, result.task_id)
+            self.assertTrue(task_log.exists())
+            self.assertIn("状态：waiting", task_log.read_text(encoding="utf-8"))
 
     def test_execute_approved_plan_runs_workers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -181,6 +201,10 @@ class ApprovalGateTests(unittest.TestCase):
             self.assertEqual(entries["stage2-ReviewerAgent-default"].status, "success")
             self.assertTrue(result.workflow_log_path.exists())
             self.assertTrue(result.reflection.output_path.exists())
+            task_log = task_log_path(root, plan_result.task_id)
+            content = task_log.read_text(encoding="utf-8")
+            self.assertIn("状态：done", content)
+            self.assertIn("自适应工作流已完成", content)
 
     def test_paused_adaptive_plan_resumes_from_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -243,6 +267,39 @@ class ApprovalGateTests(unittest.TestCase):
             plans = list_adaptive_plans(root)
 
             self.assertEqual(plans[0].status, "已执行")
+
+    def test_success_state_uses_reviewer_verdict_not_summary_text(self) -> None:
+        from code_agent_collab.agents import ComplexityLevel, OrchestrationPlan
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            task_id = "task-review-summary"
+            context_pack = root / "logs" / "context-packs" / f"{task_id}.md"
+            context_pack.parent.mkdir(parents=True)
+            context_pack.write_text("context", encoding="utf-8")
+            plan = OrchestrationPlan(
+                complexity=ComplexityLevel.SIMPLE,
+                label="reviewer-only",
+                stages=((WorkerSpec("ReviewerAgent"),),),
+            )
+            plan_path = root / "logs" / "plans" / f"{task_id}.json"
+            plan_path.parent.mkdir(parents=True)
+            plan_path.write_text(
+                __import__("json").dumps(
+                    _plan_to_json(plan, task_id, "测试 summary 文案", "summary"),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+            with patch(
+                "code_agent_collab.orchestration.build_worker",
+                return_value=PassingReviewerWithRiskySummary(),
+            ):
+                execute_adaptive_plan(root, task_id)
+
+            self.assertIsNone(load_checkpoint(root, task_id))
 
 
 class AdaptiveWorkflowTests(unittest.TestCase):

@@ -5,6 +5,12 @@ from pathlib import Path
 
 from ..apply import FALLBACK_MARKER, parse_draft, validate_changes
 from ..config import load_config
+from ..draft_review import (
+    extract_ai_draft_body,
+    has_concrete_test_method,
+    has_unresolved_conflict_marker,
+    mentions_main_vault_outside_project,
+)
 from ..providers import AIProvider, create_provider
 from ..review import scan_sensitive
 from .base import AgentContext, AgentResult, BaseAgent, PermissionLevel
@@ -57,7 +63,7 @@ class ReviewerAgent(BaseAgent):
         for draft_path in draft_paths:
             name = draft_path.name
             content = draft_path.read_text(encoding="utf-8")
-            draft_body = _extract_ai_draft_body(content)
+            draft_body = extract_ai_draft_body(content)
             stripped_len = len(draft_body.strip())
             if stripped_len < MIN_DRAFT_CHARS:
                 reasons.append(
@@ -67,7 +73,7 @@ class ReviewerAgent(BaseAgent):
             if sensitive:
                 reasons.append(f"草稿 {name} 检测到敏感信息：" + "、".join(sensitive))
             vault = Path(load_config(context.project_root).main_vault_path)
-            if _mentions_main_vault_outside_project(content, vault, context.project_root):
+            if mentions_main_vault_outside_project(content, vault, context.project_root):
                 reasons.append(f"草稿 {name} 内容引用了主知识库路径，疑似越权")
             parsed = parse_draft(draft_body)
             reasons.extend(
@@ -121,7 +127,7 @@ class ReviewerAgent(BaseAgent):
                 latest[worker_key] = (revision, path)
         reasons: list[str] = []
         for _, path in sorted(latest.values(), key=lambda item: item[1].name):
-            parsed = parse_draft(_extract_ai_draft_body(path.read_text(encoding="utf-8")))
+            parsed = parse_draft(extract_ai_draft_body(path.read_text(encoding="utf-8")))
             reasons.extend(_review_ownership(path.name, parsed, self.contracts))
         return reasons
 
@@ -156,34 +162,6 @@ def _draft_worker_key(path: Path, prefix: str) -> tuple[str, int]:
         return tail, 0
 
 
-def _mentions_main_vault_outside_project(content: str, vault: Path, project_root: Path) -> bool:
-    vault_forms = _path_forms(vault)
-    project_forms = _path_forms(project_root)
-    for line in content.splitlines():
-        normalized = line.lower()
-        if any(vault_form in normalized for vault_form in vault_forms) and not any(
-            project_form in normalized for project_form in project_forms
-        ):
-            return True
-    return False
-
-
-def _path_forms(path: Path) -> tuple[str, str]:
-    raw = str(path).lower()
-    return raw, path.as_posix().lower()
-
-
-def _extract_ai_draft_body(content: str) -> str:
-    marker = "## AI 草稿"
-    if marker not in content:
-        return content
-    body = content.split(marker, 1)[1]
-    for boundary in ("\n## 安全边界", "\n## 输入草稿", "\n## Reviewer 反馈"):
-        if boundary in body:
-            body = body.split(boundary, 1)[0]
-    return body
-
-
 def _review_draft_structure(
     project_root: Path,
     name: str,
@@ -202,9 +180,9 @@ def _review_draft_structure(
             continue
         reasons.append(f"草稿 {name} 路径不合规：{error}")
 
-    if parsed.test_method and not _has_concrete_test_method(parsed.test_method):
+    if parsed.test_method and not has_concrete_test_method(parsed.test_method):
         reasons.append(f"草稿 {name} 测试方法过于笼统，需写明具体命令或检查点")
-    if _has_unresolved_conflict_marker(draft_body):
+    if has_unresolved_conflict_marker(draft_body):
         reasons.append(f"草稿 {name} 包含未解决冲突标记")
     # 兜底合并说明结构上合法，但内容只是把原始草稿堆在一起，不是真正的合并结果；
     # 放行它等于让"合并失败"悄悄变成"评审通过"。
@@ -217,33 +195,6 @@ def _review_draft_structure(
 
 def _is_template_placeholder_error(error: str) -> bool:
     return "<路径>" in error or "<文件相对路径>" in error
-
-
-def _has_concrete_test_method(test_method: str) -> bool:
-    text = test_method.lower()
-    concrete_tokens = (
-        "python",
-        "pytest",
-        "unittest",
-        "npm",
-        "pnpm",
-        "node",
-        "pwsh",
-        "powershell",
-        "curl",
-        "http",
-        "点击",
-        "打开",
-        "检查",
-        "验证",
-        "运行",
-        "命令",
-    )
-    return any(token in text for token in concrete_tokens)
-
-
-def _has_unresolved_conflict_marker(content: str) -> bool:
-    return any(marker in content for marker in ("<<<<<<<", "=======", ">>>>>>>"))
 
 
 def _draft_worker_label(name: str) -> str:

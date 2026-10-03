@@ -14,6 +14,12 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import load_config
+from .draft_review import (
+    extract_ai_draft_body,
+    has_concrete_test_method,
+    has_unresolved_conflict_marker,
+    mentions_main_vault_outside_project,
+)
 from .file_utils import ensure_dir, read_text, write_text
 from .review import scan_sensitive
 
@@ -232,7 +238,7 @@ def validate_changes(project_root: Path, changes: list[DraftChange]) -> list[str
 def review_apply_gate(project_root: Path, draft_path: Path, content: str, parsed: ParseResult) -> list[str]:
     """应用草稿前的硬闸门：复用 Reviewer 的关键规则，避免不合格草稿落盘。"""
     errors: list[str] = []
-    draft_body = _extract_ai_draft_body(content)
+    draft_body = extract_ai_draft_body(content)
     stripped_len = len(draft_body.strip())
     if stripped_len < 100:
         errors.append(f"草稿内容过短（{stripped_len} 字符 < 100），疑似空草稿")
@@ -242,13 +248,13 @@ def review_apply_gate(project_root: Path, draft_path: Path, content: str, parsed
         errors.append("检测到敏感信息：" + "、".join(sensitive))
 
     vault = Path(load_config(project_root).main_vault_path)
-    if _mentions_main_vault_outside_project(content, vault, project_root):
+    if mentions_main_vault_outside_project(content, vault, project_root):
         errors.append("草稿内容引用了项目外的主知识库路径，疑似越权")
 
-    if parsed.test_method and not _has_concrete_test_method(parsed.test_method):
+    if parsed.test_method and not has_concrete_test_method(parsed.test_method):
         errors.append("测试方法过于笼统，需写明具体命令或检查点")
 
-    if _has_unresolved_conflict_marker(draft_body):
+    if has_unresolved_conflict_marker(draft_body):
         errors.append("草稿包含未解决冲突标记")
 
     if FALLBACK_MARKER in content:
@@ -262,61 +268,6 @@ def review_apply_gate(project_root: Path, draft_path: Path, content: str, parsed
     if "-coder-draft" not in draft_path.name:
         errors.append("草稿文件名不是 Coder/Integrator 标准草稿，拒绝应用")
     return errors
-
-
-def _extract_ai_draft_body(content: str) -> str:
-    marker = "## AI 草稿"
-    if marker not in content:
-        return content
-    body = content.split(marker, 1)[1]
-    for boundary in ("\n## 安全边界", "\n## 输入草稿", "\n## Reviewer 反馈"):
-        if boundary in body:
-            body = body.split(boundary, 1)[0]
-    return body
-
-
-def _mentions_main_vault_outside_project(content: str, vault: Path, project_root: Path) -> bool:
-    vault_forms = _path_forms(vault)
-    project_forms = _path_forms(project_root)
-    for line in content.splitlines():
-        normalized = line.lower()
-        if any(vault_form in normalized for vault_form in vault_forms) and not any(
-            project_form in normalized for project_form in project_forms
-        ):
-            return True
-    return False
-
-
-def _path_forms(path: Path) -> tuple[str, str]:
-    raw = str(path).lower()
-    return raw, path.as_posix().lower()
-
-
-def _has_concrete_test_method(test_method: str) -> bool:
-    text = test_method.lower()
-    concrete_tokens = (
-        "python",
-        "pytest",
-        "unittest",
-        "npm",
-        "pnpm",
-        "node",
-        "pwsh",
-        "powershell",
-        "curl",
-        "http",
-        "点击",
-        "打开",
-        "检查",
-        "验证",
-        "运行",
-        "命令",
-    )
-    return any(token in text for token in concrete_tokens)
-
-
-def _has_unresolved_conflict_marker(content: str) -> bool:
-    return any(marker in content for marker in ("<<<<<<<", "=======", ">>>>>>>"))
 
 
 def generate_diffs(project_root: Path, changes: list[DraftChange]) -> list[tuple[str, str]]:

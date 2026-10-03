@@ -42,6 +42,7 @@ class ProviderConfig:
     timeout_seconds: float = 30.0
     max_retries: int = 2
     retry_backoff_seconds: float = 0.5
+    max_prompt_chars: int = 60_000
 
     @classmethod
     def from_env(cls) -> "ProviderConfig":
@@ -57,6 +58,7 @@ class ProviderConfig:
             timeout_seconds=float(os.getenv("AGENT_WORKBENCH_TIMEOUT_SECONDS", "30")),
             max_retries=int(os.getenv("AGENT_WORKBENCH_MAX_RETRIES", "2")),
             retry_backoff_seconds=float(os.getenv("AGENT_WORKBENCH_RETRY_BACKOFF_SECONDS", "0.5")),
+            max_prompt_chars=int(os.getenv("AGENT_WORKBENCH_MAX_PROMPT_CHARS", "60000")),
         )
 
 
@@ -103,6 +105,7 @@ class OpenAICompatibleProvider(AIProvider):
         self.name = config.name or "openai-compatible"
 
     def complete(self, system_prompt: str, user_prompt: str) -> str:
+        self._check_prompt_budget(system_prompt, user_prompt)
         if not self.config.base_url:
             raise ProviderConfigurationError(
                 "使用 OpenAI 兼容 Provider 时必须设置 AGENT_WORKBENCH_BASE_URL"
@@ -139,6 +142,15 @@ class OpenAICompatibleProvider(AIProvider):
         )
         result = self._request_with_retries(http_request)
         return _extract_chat_content(result)
+
+    def _check_prompt_budget(self, system_prompt: str, user_prompt: str) -> None:
+        total_chars = len(system_prompt) + len(user_prompt)
+        if total_chars > self.config.max_prompt_chars:
+            raise ProviderCallError(
+                "Provider 提示词超过本地预算："
+                f"{total_chars} 字符 > {self.config.max_prompt_chars} 字符。"
+                "请缩小上下文包或调高 AGENT_WORKBENCH_MAX_PROMPT_CHARS。"
+            )
 
     def _request_with_retries(self, http_request: request.Request) -> dict:
         attempts = max(1, self.config.max_retries + 1)
