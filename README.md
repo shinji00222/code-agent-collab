@@ -19,7 +19,7 @@ This project is not about adding more agents for show. The main goal is to make 
 
 ## Current Status
 
-Current version: `v0.17.3`
+Current version: `v0.17.4`
 
 Current direction: **Stable Coding Loop -> Hierarchical Context -> Evaluation**.
 

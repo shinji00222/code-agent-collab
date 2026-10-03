@@ -97,6 +97,16 @@ class AdaptivePlanSummary:
     updated_at: datetime
 
 
+@dataclass(frozen=True)
+class PlanExecutionState:
+    results: list[AgentResult]
+    latest_coder_specs: tuple[WorkerSpec, ...]
+    latest_integrator_specs: tuple[WorkerSpec, ...]
+    done_roles: set[str]
+    start_stage_index: int
+    resume_detail: str
+
+
 def build_worker(
     spec: WorkerSpec,
     provider: AIProvider,
@@ -514,6 +524,79 @@ def _specs_from_json(items: list[dict]) -> tuple[WorkerSpec, ...]:
     )
 
 
+def _load_execution_state(
+    project_root: Path,
+    task_id: str,
+    orchestrator_result: AgentResult,
+) -> PlanExecutionState:
+    checkpoint = load_checkpoint(project_root, task_id)
+    if checkpoint is None:
+        return PlanExecutionState(
+            results=[orchestrator_result],
+            latest_coder_specs=(),
+            latest_integrator_specs=(),
+            done_roles={"ContextPack", "OrchestratorAgent", "ApprovalGate"},
+            start_stage_index=0,
+            resume_detail="方案已批准，开始执行 workers。",
+        )
+
+    results = list(checkpoint.get("agent_results", []))
+    if not results:
+        results = [orchestrator_result]
+    start_stage_index = int(checkpoint.get("next_stage_index", 0))
+    return PlanExecutionState(
+        results=results,
+        latest_coder_specs=_specs_from_json(checkpoint.get("latest_coder_specs", [])),
+        latest_integrator_specs=_specs_from_json(checkpoint.get("latest_integrator_specs", [])),
+        done_roles=set(checkpoint.get("done_roles", set())),
+        start_stage_index=start_stage_index,
+        resume_detail=f"从暂停断点继续执行，下一阶段序号：{start_stage_index + 1}。",
+    )
+
+
+def _save_execution_checkpoint(
+    project_root: Path,
+    *,
+    task_id: str,
+    next_stage_index: int,
+    done_roles: set[str],
+    results: list[AgentResult],
+    latest_coder_specs: tuple[WorkerSpec, ...],
+    latest_integrator_specs: tuple[WorkerSpec, ...],
+) -> None:
+    save_checkpoint(
+        project_root,
+        task_id=task_id,
+        next_stage_index=next_stage_index,
+        done_roles=done_roles,
+        agent_results=results,
+        latest_coder_specs=_specs_to_json(latest_coder_specs),
+        latest_integrator_specs=_specs_to_json(latest_integrator_specs),
+    )
+
+
+def _publish_execution_failure(
+    project_root: Path,
+    *,
+    task_id: str,
+    goal: str,
+    plan: OrchestrationPlan,
+    done_roles: set[str],
+    detail: str,
+    failed_roles: set[str],
+) -> None:
+    _publish_adaptive(
+        project_root,
+        task_id=task_id,
+        goal=goal,
+        status="failed",
+        detail=detail,
+        plan=plan,
+        done=done_roles,
+        failed=failed_roles,
+    )
+
+
 def _spec_to_json(spec: WorkerSpec) -> dict:
     return {
         "role": spec.role,
@@ -695,6 +778,136 @@ def create_adaptive_plan(project_root: Path, goal: str) -> AdaptivePlanResult:
     )
 
 
+def _run_reviewer_fix_loop(
+    *,
+    project_root: Path,
+    task_id: str,
+    goal: str,
+    plan: OrchestrationPlan,
+    provider: AIProvider,
+    context: AgentContext,
+    results: list[AgentResult],
+    done_roles: set[str],
+    reviewer,
+    reviewer_result: AgentResult,
+    latest_coder_specs: tuple[WorkerSpec, ...],
+    latest_integrator_specs: tuple[WorkerSpec, ...],
+    stage_index: int,
+):
+    retry_count = 0
+    while (
+        latest_coder_specs
+        and _reviewer_needs_revision(reviewer)
+        and retry_count < MAX_REVIEW_RETRIES
+    ):
+        retry_count += 1
+        _pause_if_requested(
+            project_root,
+            task_id=task_id,
+            goal=goal,
+            plan=plan,
+            done=done_roles,
+            next_role="FixLoop",
+        )
+        _publish_adaptive(
+            project_root,
+            task_id=task_id,
+            goal=goal,
+            status="running",
+            detail="ReviewerAgent 未通过，进入 Fix Loop。",
+            plan=plan,
+            done=done_roles,
+            running={"FixLoop"},
+        )
+        try:
+            rewrite_results = _rerun_coders(
+                latest_coder_specs,
+                provider,
+                context,
+                results,
+                _reviewer_feedback(reviewer, reviewer_result),
+                retry_count,
+                stage_index=stage_index + 1,
+            )
+        except WorkerStageFailed as exc:
+            _extend_unique_results(results, exc.partial_results)
+            done_roles.update(exc.succeeded_roles)
+            _save_execution_checkpoint(
+                project_root,
+                task_id=task_id,
+                next_stage_index=stage_index,
+                done_roles=done_roles,
+                results=results,
+                latest_coder_specs=latest_coder_specs,
+                latest_integrator_specs=latest_integrator_specs,
+            )
+            _publish_execution_failure(
+                project_root,
+                task_id=task_id,
+                goal=goal,
+                detail=f"Fix Loop 有 worker 失败，已保存断点：{exc}",
+                plan=plan,
+                done=done_roles,
+                failed=exc.failed_roles,
+            )
+            raise RuntimeError(f"Fix Loop 有 worker 失败：{exc}") from exc
+        _extend_unique_results(results, rewrite_results)
+        done_roles.add("FixLoop")
+        done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_coder_specs)
+        if latest_integrator_specs:
+            _publish_adaptive(
+                project_root,
+                task_id=task_id,
+                goal=goal,
+                status="running",
+                detail="CoderAgent 已重写，IntegratorAgent 正在重新合并草稿。",
+                plan=plan,
+                done=done_roles,
+                running={"IntegratorAgent"},
+            )
+            integrator_results = [
+                _run_single_worker(
+                    build_worker(spec, provider),
+                    spec,
+                    context,
+                    results,
+                    stage_index=stage_index + 1,
+                    revision=retry_count,
+                    feedback=_reviewer_feedback(reviewer, reviewer_result),
+                )
+                for spec in latest_integrator_specs
+            ]
+            _extend_unique_results(results, integrator_results)
+            done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_integrator_specs)
+        reviewer = build_worker(
+            WorkerSpec("ReviewerAgent"),
+            provider,
+            coder_contracts={spec.label: spec.owned_paths for spec in latest_coder_specs},
+        )
+        _pause_if_requested(
+            project_root,
+            task_id=task_id,
+            goal=goal,
+            plan=plan,
+            done=done_roles,
+            next_role="ReviewerAgent",
+        )
+        _publish_adaptive(
+            project_root,
+            task_id=task_id,
+            goal=goal,
+            status="running",
+            detail="CoderAgent 已重写，ReviewerAgent 正在复审。",
+            plan=plan,
+            done=done_roles,
+            running={"ReviewerAgent"},
+        )
+        reviewer_result = reviewer.run(context, results)
+        results.append(reviewer_result)
+        done_roles.add("ReviewerAgent")
+    return reviewer
+
+
 def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResult:
     """第二阶段：人工审批通过后，按已保存的计划执行 workers（阶段内并行）。"""
     plan_path = find_plan_path(project_root, task)
@@ -723,30 +936,19 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
         next_steps=["执行已完成，等待复盘确认。"],
     )
 
-    checkpoint = load_checkpoint(project_root, task_id)
-    if checkpoint is not None:
-        results = list(checkpoint.get("agent_results", []))
-        if not results:
-            results = [orchestrator_result]
-        latest_coder_specs = _specs_from_json(checkpoint.get("latest_coder_specs", []))
-        latest_integrator_specs = _specs_from_json(checkpoint.get("latest_integrator_specs", []))
-        done_roles = set(checkpoint.get("done_roles", set()))
-        start_stage_index = int(checkpoint.get("next_stage_index", 0))
-        resume_detail = f"从暂停断点继续执行，下一阶段序号：{start_stage_index + 1}。"
-    else:
-        results = [orchestrator_result]
-        latest_coder_specs = ()
-        latest_integrator_specs = ()
-        done_roles = {"ContextPack", "OrchestratorAgent", "ApprovalGate"}
-        start_stage_index = 0
-        resume_detail = "方案已批准，开始执行 workers。"
+    state = _load_execution_state(project_root, task_id, orchestrator_result)
+    results = state.results
+    latest_coder_specs = state.latest_coder_specs
+    latest_integrator_specs = state.latest_integrator_specs
+    done_roles = state.done_roles
+    start_stage_index = state.start_stage_index
 
     _publish_adaptive(
         project_root,
         task_id=task_id,
         goal=goal,
         status="running",
-        detail=resume_detail,
+        detail=state.resume_detail,
         plan=plan,
         done=done_roles,
     )
@@ -792,20 +994,19 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
         except WorkerStageFailed as exc:
             _extend_unique_results(results, exc.partial_results)
             done_roles.update(exc.succeeded_roles)
-            save_checkpoint(
+            _save_execution_checkpoint(
                 project_root,
                 task_id=task_id,
                 next_stage_index=stage_index,
                 done_roles=done_roles,
-                agent_results=results,
-                latest_coder_specs=_specs_to_json(latest_coder_specs),
-                latest_integrator_specs=_specs_to_json(latest_integrator_specs),
+                results=results,
+                latest_coder_specs=latest_coder_specs,
+                latest_integrator_specs=latest_integrator_specs,
             )
-            _publish_adaptive(
+            _publish_execution_failure(
                 project_root,
                 task_id=task_id,
                 goal=goal,
-                status="failed",
                 detail=f"阶段 {stage_index + 1} 有 worker 失败，已保存断点：{exc}",
                 plan=plan,
                 done=done_roles,
@@ -821,131 +1022,33 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             if getattr(worker, "role", "") == "ReviewerAgent"
         ]
         if not reviewer_pairs:
-            save_checkpoint(
+            _save_execution_checkpoint(
                 project_root,
                 task_id=task_id,
                 next_stage_index=stage_index + 1,
                 done_roles=done_roles,
-                agent_results=results,
-                latest_coder_specs=_specs_to_json(latest_coder_specs),
-                latest_integrator_specs=_specs_to_json(latest_integrator_specs),
+                results=results,
+                latest_coder_specs=latest_coder_specs,
+                latest_integrator_specs=latest_integrator_specs,
             )
             continue
 
         reviewer, reviewer_result = reviewer_pairs[0]
-        retry_count = 0
-        while (
-            latest_coder_specs
-            and _reviewer_needs_revision(reviewer)
-            and retry_count < MAX_REVIEW_RETRIES
-        ):
-            retry_count += 1
-            _pause_if_requested(
-                project_root,
-                task_id=task_id,
-                goal=goal,
-                plan=plan,
-                done=done_roles,
-                next_role="FixLoop",
-            )
-            _publish_adaptive(
-                project_root,
-                task_id=task_id,
-                goal=goal,
-                status="running",
-                detail="ReviewerAgent 未通过，进入 Fix Loop。",
-                plan=plan,
-                done=done_roles,
-                running={"FixLoop"},
-            )
-            try:
-                rewrite_results = _rerun_coders(
-                    latest_coder_specs,
-                    provider,
-                    context,
-                    results,
-                    _reviewer_feedback(reviewer, reviewer_result),
-                    retry_count,
-                    stage_index=stage_index + 1,
-                )
-            except WorkerStageFailed as exc:
-                _extend_unique_results(results, exc.partial_results)
-                done_roles.update(exc.succeeded_roles)
-                save_checkpoint(
-                    project_root,
-                    task_id=task_id,
-                    next_stage_index=stage_index,
-                    done_roles=done_roles,
-                    agent_results=results,
-                    latest_coder_specs=_specs_to_json(latest_coder_specs),
-                    latest_integrator_specs=_specs_to_json(latest_integrator_specs),
-                )
-                _publish_adaptive(
-                    project_root,
-                    task_id=task_id,
-                    goal=goal,
-                    status="failed",
-                    detail=f"Fix Loop 有 worker 失败，已保存断点：{exc}",
-                    plan=plan,
-                    done=done_roles,
-                    failed=exc.failed_roles,
-                )
-                raise RuntimeError(f"Fix Loop 有 worker 失败：{exc}") from exc
-            _extend_unique_results(results, rewrite_results)
-            done_roles.add("FixLoop")
-            done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_coder_specs)
-            if latest_integrator_specs:
-                _publish_adaptive(
-                    project_root,
-                    task_id=task_id,
-                    goal=goal,
-                    status="running",
-                    detail="CoderAgent 已重写，IntegratorAgent 正在重新合并草稿。",
-                    plan=plan,
-                    done=done_roles,
-                    running={"IntegratorAgent"},
-                )
-                integrator_results = [
-                    _run_single_worker(
-                        build_worker(spec, provider),
-                        spec,
-                        context,
-                        results,
-                        stage_index=stage_index + 1,
-                        revision=retry_count,
-                        feedback=_reviewer_feedback(reviewer, reviewer_result),
-                    )
-                    for spec in latest_integrator_specs
-                ]
-                _extend_unique_results(results, integrator_results)
-                done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_integrator_specs)
-            reviewer = build_worker(
-                WorkerSpec("ReviewerAgent"),
-                provider,
-                coder_contracts={spec.label: spec.owned_paths for spec in latest_coder_specs},
-            )
-            _pause_if_requested(
-                project_root,
-                task_id=task_id,
-                goal=goal,
-                plan=plan,
-                done=done_roles,
-                next_role="ReviewerAgent",
-            )
-            _publish_adaptive(
-                project_root,
-                task_id=task_id,
-                goal=goal,
-                status="running",
-                detail="CoderAgent 已重写，ReviewerAgent 正在复审。",
-                plan=plan,
-                done=done_roles,
-                running={"ReviewerAgent"},
-            )
-            reviewer_result = reviewer.run(context, results)
-            results.append(reviewer_result)
-            done_roles.add("ReviewerAgent")
-
+        reviewer = _run_reviewer_fix_loop(
+            project_root=project_root,
+            task_id=task_id,
+            goal=goal,
+            plan=plan,
+            provider=provider,
+            context=context,
+            results=results,
+            done_roles=done_roles,
+            reviewer=reviewer,
+            reviewer_result=reviewer_result,
+            latest_coder_specs=latest_coder_specs,
+            latest_integrator_specs=latest_integrator_specs,
+            stage_index=stage_index,
+        )
         if _reviewer_needs_revision(reviewer):
             _publish_adaptive(
                 project_root,
@@ -959,13 +1062,14 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
             )
             break
 
-        save_checkpoint(
+        _save_execution_checkpoint(
             project_root,
             task_id=task_id,
             next_stage_index=stage_index + 1,
             done_roles=done_roles,
-            agent_results=results,
-            latest_coder_specs=_specs_to_json(latest_coder_specs),
+            results=results,
+            latest_coder_specs=latest_coder_specs,
+            latest_integrator_specs=latest_integrator_specs,
         )
 
     workflow_log_path = _write_adaptive_log(project_root, task_id, goal, plan, results)
