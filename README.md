@@ -89,6 +89,7 @@ scripts/                 packaging and setup scripts
 - [Maintenance guide](维护指南.md)
 - [Project skills](技能.md)
 - [Research route](科研路线.md)
+- [Code simplification plan](product-docs/代码简化优化规划.md)
 
 ## Tests
 
