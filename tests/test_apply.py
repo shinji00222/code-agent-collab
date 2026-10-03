@@ -159,6 +159,37 @@ class ParseDraftTests(unittest.TestCase):
             result.errors,
         )
 
+    def test_parse_strips_markdown_code_fences_from_file_content(self) -> None:
+        draft = "\n".join(
+            [
+                "# CoderAgent 草稿：测试任务",
+                "",
+                "## 修改文件清单",
+                "- src/example.py（新增）",
+                "",
+                "## 修改原因",
+                "测试原因。",
+                "",
+                "## 建议代码",
+                "### src/example.py",
+                "```python",
+                "def answer() -> int:",
+                "    return 42",
+                "```",
+                "",
+                "## 测试方法",
+                "运行 python -m unittest discover -s tests。",
+                "",
+                "## 风险",
+                "低风险。",
+            ]
+        )
+
+        result = parse_draft(draft)
+
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.changes[0].content, "def answer() -> int:\n    return 42")
+
 
 class ValidateTests(unittest.TestCase):
     def test_allowed_paths_pass(self) -> None:
@@ -364,6 +395,20 @@ class SampleTests(unittest.TestCase):
             draft_path = _write_draft(root, "# 草稿")
             found = find_draft_path(root, "任务A")
             self.assertEqual(found, draft_path)
+
+    def test_find_draft_path_prefers_latest_coder_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            _write_draft(root, "# 初稿", name="20260101-000000-任务R-coder-draft.md")
+            revision = _write_draft(
+                root,
+                "# Reviewer 返工后的草稿",
+                name="20260101-000000-任务R-coder-draft-revision1.md",
+            )
+
+            found = find_draft_path(root, "任务R")
+
+            self.assertEqual(found, revision)
 
     def test_find_draft_path_prefers_integrated_draft(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

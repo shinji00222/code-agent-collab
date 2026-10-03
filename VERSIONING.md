@@ -173,6 +173,7 @@
 - v0.17.5：可靠性与代码简化修订版；继续拆分 Web 后端模块，合并草稿评审 helper，补任务 ID 防碰撞、任务日志和 Provider 本地提示词预算。
 - v0.17.6：项目结构整理版；统一长期文档英文文件名，更新引用和测试夹具，删除无用旧 worktree checkout。
 - v0.17.7：暂停状态修复版；单项目工作台的 CLI 工作命令启动时清理旧 `pause.json`，避免下一次任务被上一次软暂停残留卡住。
+- v0.17.8：返工草稿选择修复版；`apply-draft` 优先使用最新 `-revisionN` 返工稿，并剥掉单文件代码围栏，避免应用旧初稿或写入 Markdown fenced code。
 - 全局 / repo / module / task / agent 私有记忆分层；
 - 短期 / 长期 memory 区分；
 - context selection 策略；
@@ -227,4 +228,5 @@
 - 2026-10-03：`v0.17.4` 已推送到 `origin/main` 并打 tag `v0.17.4`。
 - 2026-10-03：`v0.17.6` 已用于本地项目结构整理；本轮未 push、未打 tag、未发 Release、未重新打 Windows 包。继续推进或发布前，先用 `git status --short --branch` 重新确认 ahead 数。
 - 2026-10-03：`v0.17.7` 用于 N11 暂停状态修复；这是修复版，当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
+- 2026-10-03：`v0.17.8` 用于 apply-draft 最新返工草稿选择与 fenced code 清理修复；当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
 - 不要只看本地版本号判断发布状态；要同时看 `git status --short --branch`、`git rev-parse HEAD` 和 `git ls-remote origin refs/heads/main`。

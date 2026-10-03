@@ -455,3 +455,10 @@ python -m unittest discover -s tests
 - 怎么验证：先写入 `pause.json`，再通过 CLI 工作命令入口执行，测试断言真正进入工作流前文件已被清理；针对性测试为 `python -m unittest tests.test_cli_pause`。
 - 常见坑：不要把 N11 误改成“多项目维度的暂停隔离”。在当前产品定位下，更小的修复是处理单项目旧状态残留；以后如果支持同时跑多个项目，再重新设计 task/project 维度的控制文件。
 
+## 43. apply-draft 选择最新返工草稿（v0.17.8）
+
+- 做什么：`apply-draft` 定位 Coder 草稿时优先使用最新 `-revisionN` 返工稿，并剥掉 AI 草稿中单文件内容外层的 Markdown 代码围栏，避免 Reviewer 打回后仍预览旧草稿，或把 ```python / ``` 写进源码。
+- 为什么：ReviewerAgent 和 IntegratorAgent 已经按 worker 取最新版 revision；apply-draft 也必须遵守同一规则，否则稳定闭环会在最后一步退回旧版本。
+- 怎么做：`find_draft_path()` 保持 integrated draft 优先；普通 Coder 草稿按文件修改时间和 `-revisionN` 后缀排序，选择最新版本。`_code_blocks()` 落入 `DraftChange` 前调用 `_strip_code_fence()` 清理外层 fenced code。
+- 怎么验证：`tests/test_apply.py::test_find_draft_path_prefers_latest_coder_revision` 先写初稿和 `revision1`，断言 `find_draft_path()` 返回返工稿；`test_parse_strips_markdown_code_fences_from_file_content` 覆盖 fenced code 清理。
+- 常见坑：不要把 exact `<task>-coder-draft.md` 直接提前返回；它通常是第一版，返工稿文件名会带 `-revisionN`。

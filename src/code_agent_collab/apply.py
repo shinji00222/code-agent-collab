@@ -121,7 +121,7 @@ def _code_blocks(section: str) -> list[DraftChange]:
     def flush() -> None:
         nonlocal current_path, buf
         if current_path is not None:
-            changes.append(DraftChange(current_path, "\n".join(buf).strip()))
+            changes.append(DraftChange(current_path, _strip_code_fence("\n".join(buf))))
         current_path = None
         buf = []
 
@@ -135,6 +135,14 @@ def _code_blocks(section: str) -> list[DraftChange]:
             buf.append(line)
     flush()
     return changes
+
+
+def _strip_code_fence(content: str) -> str:
+    """去掉单个文件内容外层的 Markdown fenced code wrapper。"""
+    lines = content.strip().splitlines()
+    if len(lines) >= 2 and lines[0].strip().startswith("```") and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return content.strip()
 
 
 def _normalize_draft_path(path: str) -> str:
@@ -513,32 +521,38 @@ def git_commit(
     return True, commit.stdout.strip()
 
 
+def _draft_sort_key(path: Path) -> tuple[float, int]:
+    match = re.search(r"-revision(\d+)\.md$", path.name)
+    revision = int(match.group(1)) if match else 0
+    return (path.stat().st_mtime, revision)
+
+
 def find_draft_path(project_root: Path, task: str) -> Path:
     projects_dir = project_root / "dev-vault" / "projects"
     if not projects_dir.exists():
         raise FileNotFoundError(f"草稿目录不存在：{projects_dir}")
-    direct = projects_dir / f"{task}-coder-draft.md"
-    if direct.exists():
-        return direct
     integrated_direct = projects_dir / f"{task}-integrated-draft.md"
     if integrated_direct.exists():
         return integrated_direct
     integrated_matches = sorted(
         projects_dir.glob(f"*{task}*integrated-draft.md"),
-        key=lambda item: item.stat().st_mtime,
+        key=_draft_sort_key,
         reverse=True,
     )
     if integrated_matches:
         return integrated_matches[0]
+    direct = projects_dir / f"{task}-coder-draft.md"
     matches = sorted(
         projects_dir.glob(f"*{task}*coder-draft*.md"),
-        key=lambda item: item.stat().st_mtime,
+        key=_draft_sort_key,
         reverse=True,
     )
+    if direct.exists() and direct not in matches:
+        matches.append(direct)
     if not matches:
         matches = sorted(
             (path for path in projects_dir.glob(DRAFT_GLOB) if task in path.stem),
-            key=lambda item: item.stat().st_mtime,
+            key=_draft_sort_key,
             reverse=True,
         )
     if not matches:

@@ -1,5 +1,23 @@
 # 更新日志
 
+## v0.17.8 - 2026-10-03（返工草稿选择修复版）
+
+### 修正：apply-draft 优先选择最新返工草稿
+
+- `find_draft_path()` 选择 Coder 草稿时，会按修改时间和 `-revisionN` 后缀排序，优先返回 Reviewer 打回后的最新版草稿。`parse_draft()` 会剥掉单文件内容外层的 Markdown 代码围栏，避免把 ```python / ``` 写进正式源码。
+- 保留 integrated draft 优先级：复杂任务仍先应用 Integrator 合并草稿，再回退到 Coder 草稿。
+- `logs/approvals/` 加入 `.gitignore`，批准基线运行产物不再污染工作区。
+
+### 边界
+
+- 本轮未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+
+### 测试
+
+- 针对性测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; $env:PYTHONPATH='src'; python -m unittest tests.test_apply tests.test_cli_pause` → 25 项 OK。
+- 真实 API 任务 dry-run 复验：`apply-draft 20261003-230013-010830-真实-API-冒烟测试：只生成一个最小-Pyth` 成功选择 `coder-draft-revision1`，输出干净 diff，且未写入 `src/answer_smoke.py` / `tests/test_answer_smoke.py`。
+
+
 ## v0.17.7 - 2026-10-03（暂停状态修复版）
 
 ### 修正：单项目工作台清理旧暂停请求
@@ -941,4 +959,3 @@
 - 不调用真实 AI API。
 - 不写入主知识库。
 - 自动生成内容先进入项目测试区。
-
