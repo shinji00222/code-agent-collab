@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from .config import save_default_config
-from .control import WorkflowPaused
+from .control import WorkflowPaused, clear_pause_request
 from .context_pack import create_context_pack
 from .coding_loop import run_coding_loop
 from .demo import run_demo
@@ -40,6 +40,16 @@ def _ensure_utf8_stdio() -> None:
                 stream.reconfigure(encoding="utf-8", errors="replace")
             except (AttributeError, ValueError):
                 pass
+
+
+def _clear_stale_pause_for_work_command(project_root: Path) -> None:
+    """Start work commands from a clean pause request state.
+
+    The workbench currently runs one project at a time, so pause.json is a
+    project-level cooperative stop signal. Clearing it at command start avoids
+    a stale pause request immediately stopping the next CLI run or resume.
+    """
+    clear_pause_request(project_root)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -380,6 +390,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "run":
+        _clear_stale_pause_for_work_command(project_root)
         try:
             result = run_workflow(project_root, args.goal)
         except WorkflowPaused as exc:
@@ -397,6 +408,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "run-adaptive":
+        _clear_stale_pause_for_work_command(project_root)
         try:
             result = create_adaptive_plan(project_root, args.goal)
         except ValueError as exc:
@@ -412,6 +424,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "approve":
+        _clear_stale_pause_for_work_command(project_root)
         try:
             result = execute_adaptive_plan(project_root, args.task)
         except WorkflowPaused as exc:
@@ -458,6 +471,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result.ok else 1
 
     if args.command == "coding-loop":
+        _clear_stale_pause_for_work_command(project_root)
         try:
             result = run_coding_loop(project_root, args.goal, apply=args.apply)
         except WorkflowPaused as exc:

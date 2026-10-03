@@ -446,3 +446,12 @@ python -m unittest discover -s tests
 - worktree 清理规则：先跑 `git worktree list --porcelain` 和目标 worktree 内 `git status --short --branch`；确认干净、无未跟踪文件、不是当前主工作区后，用 `git worktree remove <path>`，再 `git worktree prune` 验证列表只剩主工作区。
 - 怎么验证：`git worktree list --porcelain` 只显示主工作区；`rg` 检查新文件名引用；最后跑 `python scripts/run-tests.py`。
 - 常见坑：不要用普通删除直接删已登记 worktree；那会留下 Git worktree 元数据。不要把“文档文件名英文”理解成正文也要英文，正文继续按 shin 的中文维护习惯写。
+
+## 42. 单项目暂停状态清理（v0.17.7）
+
+- 做什么：CLI 工作命令启动时清理旧的项目级 `logs/control/pause.json`，避免上一次软暂停残留影响下一次任务。
+- 为什么：当前工作台一次只处理一个项目，暂停信号保持项目级即可；真正风险是旧暂停文件跨 CLI 运行残留，让新任务或恢复命令刚启动就停在阶段边界。
+- 怎么做：`cli.py` 在 `run`、`run-adaptive`、`approve`、`coding-loop` 调用实际工作流前统一执行 `clear_pause_request(project_root)`；运行中的 Web/Desktop 暂停仍由 `request_pause()` 写入同一个项目级文件。
+- 怎么验证：先写入 `pause.json`，再通过 CLI 工作命令入口执行，测试断言真正进入工作流前文件已被清理；针对性测试为 `python -m unittest tests.test_cli_pause`。
+- 常见坑：不要把 N11 误改成“多项目维度的暂停隔离”。在当前产品定位下，更小的修复是处理单项目旧状态残留；以后如果支持同时跑多个项目，再重新设计 task/project 维度的控制文件。
+

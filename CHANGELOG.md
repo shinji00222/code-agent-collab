@@ -1,5 +1,23 @@
 # 更新日志
 
+## v0.17.7 - 2026-10-03（暂停状态修复版）
+
+### 修正：单项目工作台清理旧暂停请求
+
+- CLI 的工作命令 `run`、`run-adaptive`、`approve`、`coding-loop` 启动时会先清理上一轮遗留的 `logs/control/pause.json`。
+- N11 的问题口径改为单项目内的旧暂停状态残留：当前工作台一次只处理一个项目，不按多项目隔离设计暂停文件。
+- 同步修正包内 `__version__`，避免包版本仍显示旧的 `0.17.2`。
+
+### 边界
+
+- 暂停信号仍是项目级软暂停；当前运行中的任务仍可通过 Web/Desktop 写入 `pause.json`，工作流会在阶段边界保存 checkpoint 后暂停。
+- 本轮未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+
+### 测试
+
+- 针对性测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; $env:PYTHONPATH='src'; python -m unittest tests.test_cli_pause` → 4 项 OK。`$env:AGENT_WORKBENCH_PROVIDER='mock'; python scripts/run-tests.py` → 219 项 OK。
+
+
 ## 未发布 - 2026-10-03（文档整理）
 
 ### 整理：英文文件名与早期草案合并
@@ -923,3 +941,4 @@
 - 不调用真实 AI API。
 - 不写入主知识库。
 - 自动生成内容先进入项目测试区。
+
