@@ -20,21 +20,43 @@ project 多Agent代码协作助手/
 │   ├── config.py            # 本地配置读取（支持环境变量覆盖）
 │   └── ...                  # demo、reflection、file_utils 等辅助模块
 ├── tests/                   # 自动化测试（unittest，对应每个功能模块）
-├── product-docs/            # 人写的需求、规则、企划文档（程序不依赖，只作参考）
+├── product-docs/            # 产品规划和代码简化规划（程序不依赖，只作参考）
 ├── dev-vault/               # AI 产出区：pending 候选记录、projects 代码草稿、rules 实验规则
 │   └── project-vault/       # 项目自有知识库：检索来源 + confirm 落点，默认不读不写外部知识库
 ├── logs/                    # 本地运行产物：context-packs 上下文包、workflows 工作流日志
 ├── .agent-workbench/        # 本地配置（config.example.json 示例；config.json 真实配置，不进 Git）
-├── 项目规则.md              # 项目规则总览（给人看）
-├── 知识地图.md              # 项目知识串联索引
-├── 维护指南.md              # 本文件：维护指南
-├── 技能.md                  # 项目技能与经验（新增 Agent/Provider 的标准流程）
+├── PROJECT_RULES.md         # 项目规则总览（给人看）
+├── MAINTENANCE.md           # 本文件：维护指南、知识流向和旧草案摘要
+├── SKILLS.md                # 项目技能与经验（新增 Agent/Provider 的标准流程）
+├── RESEARCH_ROADMAP.md      # 进组/科研路线和阶段目标
 ├── AGENTS.md                # 给 AI 的项目协作规则
 ├── README.md                # 项目介绍、命令、使用说明
-├── 变更记录.md              # 版本变更记录
-├── 版本管理.md              # 版本号规则与发布流程
+├── README.zh-CN.md          # 中文 README
+├── CHANGELOG.md             # 版本变更记录
+├── VERSIONING.md            # 版本号规则与发布流程
 └── pyproject.toml           # 包元数据（无第三方依赖）
 ```
+
+### 文档命名规则
+
+- 当前项目 Markdown 文件名统一用英文，减少 GitHub 链接编码、PowerShell 引号和跨平台脚本处理成本。
+- 文档正文可以继续用中文；这是给项目维护者看的材料，不需要为了文件名英文而牺牲可读性。
+- 历史中文文件名已经改为：`版本管理.md` → `VERSIONING.md`，`变更记录.md` → `CHANGELOG.md`，`技能.md` → `SKILLS.md`，`维护指南.md` → `MAINTENANCE.md`，`项目规则.md` → `PROJECT_RULES.md`，`科研路线.md` → `RESEARCH_ROADMAP.md`。
+
+### 当前文档入口
+
+| 文档 | 用途 |
+| --- | --- |
+| `README.md` / `README.zh-CN.md` | 对外介绍和快速启动 |
+| `PROJECT_RULES.md` | 人看的项目规则总览 |
+| `AGENTS.md` | AI 协作规则 |
+| `MAINTENANCE.md` | 维护方法、目录结构、知识流向、旧草案摘要 |
+| `SKILLS.md` | 已验证的项目经验和标准流程 |
+| `VERSIONING.md` | 版本规划和发布流程 |
+| `CHANGELOG.md` | 版本变更记录 |
+| `RESEARCH_ROADMAP.md` | 进组/科研路线 |
+| `product-docs/project-plan.md` | 产品企划和早期目标摘要 |
+| `product-docs/code-simplification-plan.md` | 代码简化和执行沙箱规划 |
 
 ## 3. 一次任务是怎么跑起来的
 
@@ -106,13 +128,31 @@ python -m unittest discover -s tests            # 跑全部测试
 5. **检索来源和写入目标默认都是项目自有知识库 `dev-vault/project-vault`，程序默认不读也不写外部知识库。** 要接真实知识库必须显式配置 `mainVaultPath` / `mainVaultWritePath`，细节见 `dev-vault/project-vault/README.md`。
 6. 做隔离演练时用 `review --task "关键词"` 限定范围，否则 `review` 会审查并改状态 `pending` 下的**所有**候选。
 
+### 知识流向
+
+```text
+任务输入
+  ↓
+logs/context-packs/<任务ID>.md 记录目标、规则、相关文件、风险和允许范围
+  ↓
+KnowledgeAgent 默认只读项目自有知识库 dev-vault/project-vault
+  ↓
+Planner / Coder / Reviewer / Validator / Reflector 按职责处理
+  ↓
+草稿进入 dev-vault/projects，候选经验进入 dev-vault/pending
+  ↓
+review 只标记状态；confirm 由人触发，默认写回 dev-vault/project-vault
+```
+
+外部知识库默认不接入。只有显式配置 `mainVaultPath` / `mainVaultWritePath`，程序才会读或写外部知识库。
+
 ### 问题台账维护（强制，详见 AGENTS.md 同名小节）
 
 项目的问题清单文档是**唯一的问题台账**，必须和代码同步：
 
-- 台账文件：`C:\Users\<你的用户名>\Desktop\多Agent代码协作助手-当前问题整理.md`（目前在本机桌面，不在项目目录内；若以后移进项目，要同步改 `AGENTS.md` 和 `项目规则.md` 里的路径）。
+- 台账文件：`C:\Users\<你的用户名>\Desktop\多Agent代码协作助手-当前问题整理.md`（目前在本机桌面，不在项目目录内；若以后移进项目，要同步改 `AGENTS.md` 和 `PROJECT_RULES.md` 里的路径）。
 - **发现新问题**（含"我方实现自身的漏洞""文档过期""企划没实现"）→ 本次任务收尾前写进台账：编号、优先级、大白话解释 + 专业术语解释、证据、建议方案。
-- **修复后立刻回填** → 在原条目标"已修复"，并写修复版本号、本地提交号、验证方式、遗留限制；只写进 `变更记录.md` 不算完成。
+- **修复后立刻回填** → 在原条目标"已修复"，并写修复版本号、本地提交号、验证方式、遗留限制；只写进 `CHANGELOG.md` 不算完成。
 - **没有验证证据不能标"已修复"**，也不写"应该修好了"。
 - 台账里保留"已修复清单"，避免重复排查。
 - 每次任务收尾前自检一遍：本轮新发现的问题和修复的问题，台账里是否都反映了。
@@ -126,14 +166,14 @@ python -m unittest discover -s tests            # 跑全部测试
 3. 在 `workflow.py` 的 `agents` 列表里加入实例（决定它在哪个位置）。
 4. 在 `tests/test_workflow.py` 更新 Agent 数量断言。
 5. 更新 README 角色列表、CHANGELOG，必要时更新 VERSIONING。
-6. 跑全部测试。详细步骤见 `技能.md` 第 6 节。
+6. 跑全部测试。详细步骤见 `SKILLS.md` 第 6 节。
 
 ### 新增一个 AI Provider
 
 1. 在 `providers.py` 的 `PROVIDER_PRESETS` 加一行预设（模型、接口地址、密钥环境变量）。
 2. 需要自定义请求格式时扩展 `OpenAICompatibleProvider` 或在 `create_provider` 里加分支。
 3. 在 `tests/test_providers.py` 加预设断言。
-4. 跑测试。详细步骤见 `技能.md` 第 2.1 节。
+4. 跑测试。详细步骤见 `SKILLS.md` 第 2.1 节。
 
 ### 修改知识库检索范围
 
@@ -173,6 +213,16 @@ python -m unittest discover -s tests            # 跑全部测试
 说明：`mainVaultDefaultMode` / `devVaultDefaultMode` 目前只是声明性字段，运行时不参与强制校验；
 真正的只读保障是「全项目只有一个写入调用点」，加新写入路径时必须自己守住它。
 
+### 早期草案已合并
+
+早期 `product-docs` 里的 MVP、CLI、数据格式、上下文包、知识库隔离、自生长和 Agent 协作协议草案已经合并到当前维护文档和 `SKILLS.md`，不再单独保留多个小文件。保留的有效结论是：
+
+- 第一版用 Markdown / JSON 落盘，不急着引入数据库。
+- 命令和脚本入口保持英文；中文只作为界面或文档正文展示。
+- 上下文包固定记录任务目标、必须遵守、相关文件、风险、允许范围和当前状态。
+- AI 输出先进 `dev-vault`，确认后才进入项目自有知识库。
+- 新增 Agent、Provider、知识库写入路径时，必须同步测试、文档和安全边界。
+
 ## 6. 怎么测试
 
 ```powershell
@@ -184,10 +234,10 @@ python -m unittest discover -s tests
 
 ## 7. 怎么发布新版本
 
-完整规则见 `版本管理.md`，简化流程：
+完整规则见 `VERSIONING.md`，简化流程：
 
 1. 本地测试全部通过，Git 状态干净（`git status` 无未提交源码改动）。
-2. 更新 `变更记录.md`，写明版本分类（开发版/实验版/稳定版/发布版）和变化。
+2. 更新 `CHANGELOG.md`，写明版本分类（开发版/实验版/稳定版/发布版）和变化。
 3. 用干净快照分支整理公开内容（不含本地配置、日志、测试产物），推送到 GitHub main。
 4. 打版本标签（如 `v0.5.0`）并推送。
 5. 创建 GitHub Release，写清楚：主要变化、适用对象、兼容性、安装方式、已验证内容、已知风险。

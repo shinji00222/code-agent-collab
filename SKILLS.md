@@ -2,7 +2,7 @@
 
 记录本项目已验证、可复用的开发技能。任务中积累的新经验先在这里沉淀，避免重复踩坑。
 
-> 方向相关：若任务目标是"把项目用于联系导师/进组"或"调整项目规划"，先读 `科研路线.md`（Multi-Agent Software Engineering System 定位、稳定闭环、分层上下文、Evaluation、学习复现线、敲门砖项目约束、广工进组渠道与导师清单、一页纸模板）。普通产品功能类任务按需读取。
+> 方向相关：若任务目标是"把项目用于联系导师/进组"或"调整项目规划"，先读 `RESEARCH_ROADMAP.md`（Multi-Agent Software Engineering System 定位、稳定闭环、分层上下文、Evaluation、学习复现线、敲门砖项目约束、广工进组渠道与导师清单、一页纸模板）。普通产品功能类任务按需读取。
 
 ## 1. 多 Agent 顺序工作流
 
@@ -56,7 +56,7 @@
 3. 在 `agents/registry.py` 的 `create_agent` 工厂登记角色（需要 provider 的 Agent 走 provider 参数）。
 4. 在 `workflow.py` 的 `build_workflow_agents()` 加入角色名和位置。
 5. 更新 `tests/test_workflow.py` 的 Agent 数量断言和新增角色的断言。
-6. 更新 README 角色列表、变更记录，必要时更新 版本管理.md。
+6. 更新 README 角色列表、变更记录，必要时更新 VERSIONING.md。
 7. 跑全部测试，确认通过后再提交。
 
 ## 7. 主知识库只读检索
@@ -381,7 +381,7 @@ python -m unittest discover -s tests
 
 ## 37. 代码简化优化顺序（v0.17.3 之后）
 
-- 做什么：按 `product-docs/代码简化优化规划.md` 小步清理冗余代码，先删未使用旧页面，再拆 Web 后端职责，最后拆编排主函数。
+- 做什么：按 `product-docs/code-simplification-plan.md` 小步清理冗余代码，先删未使用旧页面，再拆 Web 后端职责，最后拆编排主函数。
 - 为什么：当前项目功能闭环已经较多，继续横向加功能会让维护成本上涨；优化目标是让代码简单、高效、可验证，而不是换框架或大重写。
 - 怎么做：
   1. 先删除 `webui.py` 里未引用的 `_LEGACY_PAGE`，保留当前 `webui_page.py` 页面入口。
@@ -414,8 +414,16 @@ python -m unittest discover -s tests
 - 怎么验证：后续实现时至少覆盖超时、输出过大、项目外路径、敏感环境变量剥离、隔离测试失败后正式仓库无变化；全量仍跑 `python scripts/run-tests.py`。
 - 常见坑：不要把“沙箱”理解成只有 Docker 才算；轻隔离和临时副本已经能挡住多数把正式项目改坏的问题。也不要把批准基线当沙箱，它只证明预览和应用一致，不能替代命令与文件系统隔离。
 
+## 40. 文档整理规则：文件名英文，内容按维护者可读
 
-## 40. Web 后端拆分、任务日志与 Provider 预算（v0.17.5）
+- 做什么：项目 Markdown 文件名统一改用英文；早期分散的产品草案合并进 `MAINTENANCE.md`、`SKILLS.md` 和 `product-docs/project-plan.md`。
+- 为什么：中文文件名在本机可用，但 GitHub 链接会编码，PowerShell 和跨平台脚本引用成本更高；英文文件名更适合公开仓库和后续自动化。
+- 怎么做：核心入口使用 `README.md`、`CHANGELOG.md`、`VERSIONING.md`、`MAINTENANCE.md`、`SKILLS.md`、`PROJECT_RULES.md`、`RESEARCH_ROADMAP.md`；产品规划放 `product-docs/project-plan.md`，代码整理规划放 `product-docs/code-simplification-plan.md`。
+- 怎么验证：`rg` 搜索旧中文文件名不应再命中当前活动链接；`git status` 应显示 rename 而不是丢失文件；README 和维护文档链接可点击。
+- 常见坑：不要把“文件名英文”误解成“正文必须英文”。内部维护材料可以继续中文，公开 README 再保持中英双入口。
+
+
+## 41. Web 后端拆分、任务日志与 Provider 预算（v0.17.5）
 
 - 做什么：继续解决本地可验证的结构和可靠性问题：Web 后端职责拆分、草稿评审 helper 合并、任务 ID 防碰撞、任务日志落盘、Provider 提示词预算，以及 Reviewer 成功判定从 summary 文案改为 `last_verdict` 状态。
 - 为什么：这些问题都会影响后续真实 API 小任务验证前的稳定性；先把本地结构和护栏做稳，再让用户接入真实 API 测试。
@@ -428,3 +436,13 @@ python -m unittest discover -s tests
   6. `orchestration.py` 用 `review_failed` / `ReviewerAgent.last_verdict` 判断最终状态，不再解析 summary 文案。
 - 怎么验证：`python scripts/run-tests.py`，本轮全量 214 项 OK。
 - 常见坑：不要用裸 `python -m unittest` 继承用户真实 Provider 环境来判断工作流测试；本项目标准入口是 `scripts/run-tests.py`，它会强制 mock Provider，避免误打真实 API。
+
+
+## 41. 项目结构整理与旧 worktree 清理（v0.17.6）
+
+- 做什么：长期文档文件名统一为英文，`product-docs/` 文件名也统一为英文；删除不再使用的旧 worktree checkout。
+- 为什么：本项目会在 GitHub、PowerShell、Windows 和可能的 WSL/Linux 之间流转，英文文件名能减少链接编码、命令转义和跨平台脚本成本；正文仍用中文保证维护可读。
+- 怎么做：根目录保留 `README.md` / `README.zh-CN.md` / `AGENTS.md`，长期维护文档使用 `CHANGELOG.md`、`VERSIONING.md`、`MAINTENANCE.md`、`PROJECT_RULES.md`、`SKILLS.md`、`RESEARCH_ROADMAP.md`、`KNOWLEDGE_MAP.md`；产品文档放 `product-docs/*.md`，文件名英文、内容中文。
+- worktree 清理规则：先跑 `git worktree list --porcelain` 和目标 worktree 内 `git status --short --branch`；确认干净、无未跟踪文件、不是当前主工作区后，用 `git worktree remove <path>`，再 `git worktree prune` 验证列表只剩主工作区。
+- 怎么验证：`git worktree list --porcelain` 只显示主工作区；`rg` 检查新文件名引用；最后跑 `python scripts/run-tests.py`。
+- 常见坑：不要用普通删除直接删已登记 worktree；那会留下 Git worktree 元数据。不要把“文档文件名英文”理解成正文也要英文，正文继续按 shin 的中文维护习惯写。

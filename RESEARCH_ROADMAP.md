@@ -2,7 +2,7 @@
 
 > 目的：让这个项目和它旁边的新练习，成为**联系导师时能证明"我学过、我动手了、我能坚持"**的材料。
 > 建立 2026-09-19，2026-09-20 修订（项目定位改为「Multi-Agent Software Engineering System」，近期聚焦稳定闭环、分层上下文和评估）。
-> 关联文档：`技能.md`（工程经验）、`变更记录.md`（版本历史）、`product-docs/项目企划.md`（产品方向）。
+> 关联文档：`SKILLS.md`（工程经验）、`CHANGELOG.md`（版本历史）、`product-docs/project-plan.md`（产品方向）。
 
 ---
 

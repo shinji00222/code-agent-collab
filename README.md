@@ -19,7 +19,7 @@ This project is not about adding more agents for show. The main goal is to make 
 
 ## Current Status
 
-Current version: `v0.17.5`
+Current version: `v0.17.6`
 
 Current direction: **Stable Coding Loop -> Hierarchical Context -> Evaluation**.
 
@@ -84,12 +84,12 @@ scripts/                 packaging and setup scripts
 ## Documentation
 
 - [中文 README](README.zh-CN.md)
-- [Version plan](版本管理.md)
-- [Changelog](变更记录.md)
-- [Maintenance guide](维护指南.md)
-- [Project skills](技能.md)
-- [Research route](科研路线.md)
-- [Code simplification plan](product-docs/代码简化优化规划.md)
+- [Version plan](VERSIONING.md)
+- [Changelog](CHANGELOG.md)
+- [Maintenance guide](MAINTENANCE.md)
+- [Project skills](SKILLS.md)
+- [Research route](RESEARCH_ROADMAP.md)
+- [Code simplification plan](product-docs/code-simplification-plan.md)
 
 ## Tests
 

@@ -1,5 +1,36 @@
 # 更新日志
 
+## 未发布 - 2026-10-03（文档整理）
+
+### 整理：英文文件名与早期草案合并
+
+- 将项目内主要 Markdown 文件名统一改为英文：`VERSIONING.md`、`CHANGELOG.md`、`SKILLS.md`、`MAINTENANCE.md`、`PROJECT_RULES.md`、`RESEARCH_ROADMAP.md`。
+- 将 `product-docs` 中仍保留的当前规划改为英文文件名：`project-plan.md`、`code-simplification-plan.md`。
+- 删除早期 MVP、CLI、数据格式、上下文包、知识库隔离、自生长和 Agent 协作协议草案文件；有效结论已合并进 `MAINTENANCE.md`、`SKILLS.md` 和 `product-docs/project-plan.md`。
+- 删除当前规则里的“文档文件名用中文”要求；后续 Markdown 文件名统一用英文，正文可继续中文。
+
+### 验证
+
+- 文档整理，无功能代码改动；检查旧中文文件名活动引用和已删除草案链接。
+
+## v0.17.6 - 2026-10-03（项目结构整理版）
+
+### 整理：统一项目文档入口和文件名
+
+- 根目录长期文档统一为英文文件名：`CHANGELOG.md`、`VERSIONING.md`、`MAINTENANCE.md`、`PROJECT_RULES.md`、`SKILLS.md`、`RESEARCH_ROADMAP.md`、`KNOWLEDGE_MAP.md`。
+- `product-docs/` 下的长期 Markdown 也统一为英文文件名，正文继续保留中文。
+- README、维护指南、项目规则、知识地图和测试夹具同步改用新文件名，减少 GitHub 链接、PowerShell 和跨平台脚本里的中文路径成本。
+- 删除旧 Git worktree checkout：`project 多Agent代码协作助手.worktrees/model-inquiry`。该 worktree 干净、无未提交/未跟踪文件；删除只移除了旧 checkout，未删除主仓库分支和 tag。
+
+### 边界
+
+- 本轮不改运行逻辑，不做真实 Provider/API 测试。
+- 本轮未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+
+### 测试
+
+- 待本轮收尾记录全量测试结果。
+
 ## v0.17.5 - 2026-10-03（可靠性与代码简化修订版）
 
 ### 修正：继续解决本地可验证的结构和可靠性问题
@@ -24,9 +55,9 @@
 
 ### 规划：执行沙箱分层路线
 
-- 将沙箱规划加入 `product-docs/代码简化优化规划.md`：明确先做轻隔离和临时副本执行，重型 WSL / Docker / VM 只在未知外部仓库、安装依赖或开放命令时评估。
-- 在 `版本管理.md` 增加 `v0.19.x Execution Sandbox Hardening`，把命令白名单、固定工作目录、超时、输出上限、密钥剥离、路径白名单和隔离测试失败不污染正式仓库列为后续目标。
-- 在 `科研路线.md` 和 `技能.md` 同步记录“执行安全与沙箱”主线，避免后续把沙箱误做成一开始就很重的基础设施项目。
+- 将沙箱规划加入 `product-docs/code-simplification-plan.md`：明确先做轻隔离和临时副本执行，重型 WSL / Docker / VM 只在未知外部仓库、安装依赖或开放命令时评估。
+- 在 `VERSIONING.md` 增加 `v0.19.x Execution Sandbox Hardening`，把命令白名单、固定工作目录、超时、输出上限、密钥剥离、路径白名单和隔离测试失败不污染正式仓库列为后续目标。
+- 在 `RESEARCH_ROADMAP.md` 和 `SKILLS.md` 同步记录“执行安全与沙箱”主线，避免后续把沙箱误做成一开始就很重的基础设施项目。
 
 ### 验证
 
@@ -53,7 +84,7 @@
 - 将 `pyproject.toml`、README 和中文 README 的当前版本同步为 `v0.17.3`。
 - 更新问题台账的当前基线：远端 `origin/main` 为 `9917d77 Refresh GitHub README overview`，本地 `main` 已领先远端，不再沿用 `bdc6de3 未 push` 的旧状态。
 - 明确本版本不改变功能代码；`v0.17.2` 的 apply-draft 批准基线校验仍是最近一次功能改动。
-- 新增 `product-docs/代码简化优化规划.md`，记录当前代码冗余点、优化顺序、验证命令和不做事项；README、知识地图、技能文档同步增加入口。
+- 新增 `product-docs/code-simplification-plan.md`，记录当前代码冗余点、优化顺序、验证命令和不做事项；README、知识地图、技能文档同步增加入口。
 
 ### 测试
 
@@ -134,7 +165,7 @@
   - `v0.16.x`：Stable Coding Loop，打通 `Issue -> 分析 repo -> 定位文件 -> 修改代码 -> 跑测试 -> Review diff -> 自动返工 -> 输出 patch/PR`。
   - `v0.17.x`：Hierarchical Context，做全局 / repo / module / task / agent memory 和 context selection。
   - `v0.18.x`：Evaluation，做 benchmark 和 Single Agent vs Multi-Agent 对照，记录成功率、token、latency、测试通过率和 Reviewer 驳回次数。
-- 同步更新 `科研路线.md`、`版本管理.md`、`README.md` 和 `技能.md`，确保新聊天能按这条主线续接。
+- 同步更新 `RESEARCH_ROADMAP.md`、`VERSIONING.md`、`README.md` 和 `SKILLS.md`，确保新聊天能按这条主线续接。
 
 ## v0.15.3 - 2026-09-18（安全修复版）
 
@@ -201,7 +232,7 @@
 - 全隔离后，`apply.py` / `reviewer.py` 的「草稿引用主知识库路径即判越权」检查在**默认隔离下不生效**（配置里的知识库已在项目内，任何引用都同时包含项目路径）。它只在显式接入外部知识库时才起作用，这一点已写成两项测试钉住。实际风险有限：`apply-draft` 白名单本来就只允许 `src/`、`tests/`。后续可考虑改为显式登记「受保护路径」。
 - 项目自有知识库位于真实知识库目录树之内（因为项目文件夹本身就在知识库里面），这是磁盘结构决定的；要保证的是程序不去扫描外部知识库，而不是让路径不嵌套。
 - 写入侧「重复确认覆盖」依然存在，只是被限制在项目知识库内；写入前拦重复仍需在 `_write_to_vault()` 加存在性检查（未做）。
-- `product-docs/任务上下文包格式.md` 仍是旧描述（「主知识库只读范围」），属文档层过期，本次未改 `product-docs/`。
+- `MAINTENANCE.md` 仍是旧描述（「主知识库只读范围」），属文档层过期，本次未改 `product-docs/`。
 
 ## v0.15.1 - 2026-09-18（安全修复版）
 
@@ -255,8 +286,8 @@
 
 ### 整理
 
-- 公开仓库去除本机用户名与绝对路径：`README.md`、`技能.md`、`维护指南.md` 改用 `$env:USERPROFILE` 或 `<你的用户名>` 占位；`desktop.py` / `webui.py` 的兜底项目根改用 `Path.home()` 拼装，本机解析结果不变。
-- `知识地图.md` 修正 `review` 的描述：只标记"待人工确认"，不自动写入主知识库。
+- 公开仓库去除本机用户名与绝对路径：`README.md`、`SKILLS.md`、`MAINTENANCE.md` 改用 `$env:USERPROFILE` 或 `<你的用户名>` 占位；`desktop.py` / `webui.py` 的兜底项目根改用 `Path.home()` 拼装，本机解析结果不变。
+- `MAINTENANCE.md` 修正 `review` 的描述：只标记"待人工确认"，不自动写入主知识库。
 
 ### 已知限制
 
@@ -651,7 +682,7 @@
 
 - README 当前版本从 `v0.8.0` 更新为 `v0.9.1`，补充 `apply-draft` 实验能力说明。
 - `pyproject.toml` 包版本从 `0.7.1` 更新为 `0.9.1`。
-- `版本管理.md` 补齐 `v0.8.x` 和 `v0.9.x` 阶段说明。
+- `VERSIONING.md` 补齐 `v0.8.x` 和 `v0.9.x` 阶段说明。
 
 ### 边界
 
@@ -790,7 +821,7 @@
 ### 整理
 
 - 文档文件名改为中文：变更记录、版本管理、维护指南、技能。
-- 新增"项目规则.md"（给人看的规则总览）和"知识地图.md"（知识串联索引）。
+- 新增"PROJECT_RULES.md"（给人看的规则总览）和"MAINTENANCE.md"（知识串联索引）。
 - README 增加规则与知识入口链接。
 
 ## v0.5.1 - 2026-08-20（修订版）

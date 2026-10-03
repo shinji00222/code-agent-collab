@@ -171,6 +171,7 @@
 - v0.17.3：修订版；同步 README、`pyproject.toml`、变更记录和问题台账里的当前版本与 Git 状态，不改变功能代码。
 - v0.17.4：代码简化修订版；删除未使用旧 Web 页面，并把自适应编排的执行状态、断点、失败发布和 Fix Loop 从主函数中拆出。
 - v0.17.5：可靠性与代码简化修订版；继续拆分 Web 后端模块，合并草稿评审 helper，补任务 ID 防碰撞、任务日志和 Provider 本地提示词预算。
+- v0.17.6：项目结构整理版；统一长期文档英文文件名，更新引用和测试夹具，删除无用旧 worktree checkout。
 - 全局 / repo / module / task / agent 私有记忆分层；
 - 短期 / 长期 memory 区分；
 - context selection 策略；
@@ -214,7 +215,7 @@
 - 本地测试必须通过；
 - Git 状态必须干净；
 - 当前分支必须能明确显示 `main...origin/main` 的 ahead/behind 状态；若 `main` 没有 upstream，先设置为跟踪 `origin/main`，再判断哪些提交只在本机、哪些已经在 GitHub。
-- 更新 `变更记录.md`；
+- 更新 `CHANGELOG.md`；
 - 创建对应 Git tag；
 - 推送 main 和 tag 到 GitHub。
 
@@ -223,5 +224,5 @@
 - 2026-09-13：已把本地 `main` 设置为跟踪 `origin/main`。
 - 设置后状态为 `main...origin/main [ahead 3]`，表示本地 `main` 比 GitHub `origin/main` 多 3 个提交；这不是代码错误，但在发布、共享或继续多人协作前必须先决定是否推送、做公开快照，或继续只保留在本地。
 - 2026-10-03：`v0.17.4` 已推送到 `origin/main` 并打 tag `v0.17.4`。
-- 2026-10-03：`v0.17.5` 已用于本地可靠性与代码简化修订；本轮未 push、未打 tag、未发 Release、未重新打 Windows 包。继续推进或发布前，先用 `git status --short --branch` 重新确认 ahead 数。
+- 2026-10-03：`v0.17.6` 已用于本地项目结构整理；本轮未 push、未打 tag、未发 Release、未重新打 Windows 包。继续推进或发布前，先用 `git status --short --branch` 重新确认 ahead 数。
 - 不要只看本地版本号判断发布状态；要同时看 `git status --short --branch`、`git rev-parse HEAD` 和 `git ls-remote origin refs/heads/main`。
