@@ -78,7 +78,7 @@ class KnowledgeAgentTests(unittest.TestCase):
             project_root.mkdir()
             docs_dir = project_root / "product-docs"
             docs_dir.mkdir()
-            (docs_dir / "项目定义.md").write_text("多 Agent 测试", encoding="utf-8")
+            (docs_dir / "project-definition.md").write_text("多 Agent 测试", encoding="utf-8")
 
             vault = Path(tmp) / "vault"
             (vault / "00-系统").mkdir(parents=True)

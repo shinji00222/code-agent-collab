@@ -13,7 +13,7 @@ class DemoTests(unittest.TestCase):
             project_root = Path(tmp)
             docs_dir = project_root / "product-docs"
             docs_dir.mkdir()
-            (docs_dir / "项目定义.md").write_text("# 项目定义\n\ndemo", encoding="utf-8")
+            (docs_dir / "project-definition.md").write_text("# 项目定义\n\ndemo", encoding="utf-8")
 
             result = run_demo(project_root, "跑通闭环")
 

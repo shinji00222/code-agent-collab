@@ -80,7 +80,7 @@ class WorkflowTests(unittest.TestCase):
             project_root = Path(tmp)
             docs_dir = project_root / "product-docs"
             docs_dir.mkdir()
-            (docs_dir / "项目定义.md").write_text("# 项目定义\n\n多 Agent 测试", encoding="utf-8")
+            (docs_dir / "project-definition.md").write_text("# 项目定义\n\n多 Agent 测试", encoding="utf-8")
 
             result = run_workflow(project_root, "测试多Agent协作")
 

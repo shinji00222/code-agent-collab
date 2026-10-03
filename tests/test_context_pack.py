@@ -14,7 +14,7 @@ class ContextPackTests(unittest.TestCase):
             project_root = Path(tmp)
             docs_dir = project_root / "product-docs"
             docs_dir.mkdir()
-            (docs_dir / "项目定义.md").write_text("# 项目定义\n\n测试文档", encoding="utf-8")
+            (docs_dir / "project-definition.md").write_text("# 项目定义\n\n测试文档", encoding="utf-8")
 
             task_id, content = build_context_pack(
                 project_root,
@@ -24,7 +24,7 @@ class ContextPackTests(unittest.TestCase):
 
             self.assertTrue(task_id.startswith("20260818-224000-"))
             self.assertIn("测试任务", content)
-            self.assertIn("项目定义.md", content)
+            self.assertIn("project-definition.md", content)
             self.assertIn("上下文选择记录", content)
             self.assertIn("Token 预算估算", content)
             self.assertIn("[task] 用户原始请求", content)
@@ -63,7 +63,7 @@ class ContextPackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             (project_root / "product-docs").mkdir()
-            (project_root / "product-docs" / "MVP范围.md").write_text("MVP", encoding="utf-8")
+            (project_root / "product-docs" / "mvp-scope.md").write_text("MVP", encoding="utf-8")
 
             result = create_context_pack(project_root, "写一个上下文包")
 
@@ -76,7 +76,7 @@ class ContextPackTests(unittest.TestCase):
             project_root = Path(tmp)
             docs_dir = project_root / "product-docs"
             docs_dir.mkdir()
-            (docs_dir / "任务上下文包格式.md").write_text(
+            (docs_dir / "context-pack-format.md").write_text(
                 "# 任务上下文包格式\n\n记录上下文选择、token 预算和知识库边界。",
                 encoding="utf-8",
             )
@@ -91,9 +91,9 @@ class ContextPackTests(unittest.TestCase):
                 now=datetime(2026, 9, 27, 10, 0, 0),
             )
 
-            self.assertIn("product-docs/任务上下文包格式.md", content)
+            self.assertIn("product-docs/context-pack-format.md", content)
             self.assertIn("命中任务关键词", content)
-            self.assertIn("### 任务上下文包格式.md", content)
+            self.assertIn("### context-pack-format.md", content)
             self.assertNotIn("### 无关文档.md", content)
 
     def test_context_pack_selects_relevant_code_files(self) -> None:

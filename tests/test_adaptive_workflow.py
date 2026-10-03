@@ -140,7 +140,7 @@ def _make_project(tmp: str) -> Path:
     project_root.mkdir()
     docs_dir = project_root / "product-docs"
     docs_dir.mkdir()
-    (docs_dir / "项目定义.md").write_text("# 项目定义\n\n多 Agent 自适应测试", encoding="utf-8")
+    (docs_dir / "project-definition.md").write_text("# 项目定义\n\n多 Agent 自适应测试", encoding="utf-8")
     return project_root
 
 

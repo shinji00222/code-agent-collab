@@ -29,7 +29,7 @@
 
 ### 测试
 
-- 待本轮收尾记录全量测试结果。
+- 全量测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; python scripts/run-tests.py` → 215 项 OK。
 
 ## v0.17.5 - 2026-10-03（可靠性与代码简化修订版）
 
