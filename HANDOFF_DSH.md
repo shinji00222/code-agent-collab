@@ -6,7 +6,7 @@
 
 ## 1. 项目路径与当前状态
 
-- 项目根目录：`C:\Users\lwz12\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手`
+- 项目根目录：`C:\Users\<你的用户名>\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手`
 - 当前分支：`main`
 - 当前本地版本：`v0.17.15`
 - 远端公开基线：`origin/main` / tag `v0.17.6` / commit `168aa6f`
@@ -18,7 +18,7 @@
 在 PowerShell 里运行：
 
 ```powershell
-Set-Location -LiteralPath 'C:\Users\lwz12\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手'
+Set-Location -LiteralPath 'C:\Users\<你的用户名>\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手'
 git status --short --branch
 git log --oneline -8
 $env:AGENT_WORKBENCH_PROVIDER='mock'
@@ -163,7 +163,7 @@ git commit -m "feat: queue and persist web jobs"
 
 ## 6. 重要文件
 
-- 问题台账：`C:\Users\lwz12\Desktop\多Agent代码协作助手-当前问题整理.md`
+- 问题台账：`C:\Users\<你的用户名>\Desktop\多Agent代码协作助手-当前问题整理.md`
 - 项目规则：`AGENTS.md`
 - 技能沉淀：`SKILLS.md`（§48 权限边界、§49 Web API 加固、§50 后台任务队列、§51 路径包含判定的坑）
 - 变更记录：`CHANGELOG.md`
