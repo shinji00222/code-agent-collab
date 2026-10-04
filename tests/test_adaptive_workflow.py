@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,7 +30,7 @@ from code_agent_collab.orchestration import (
 )
 from code_agent_collab.providers import AIProvider
 from code_agent_collab.task_log import task_log_path
-from code_agent_collab.worker_runs import load_worker_runs
+from code_agent_collab.worker_runs import load_worker_runs, worker_runs_path
 
 
 class ShortThenGoodProvider(AIProvider):
@@ -441,6 +442,10 @@ class WorkerRunLedgerTests(unittest.TestCase):
             records = load_worker_runs(root, "task-1")
             self.assertEqual(records["stage2-CoderAgent-模块A"].status, "success")
             self.assertEqual(records["stage2-CoderAgent-模块B"].status, "failed")
+            self.assertEqual(
+                [attempt.status for attempt in records["stage2-CoderAgent-模块B"].attempts],
+                ["running", "failed"],
+            )
             entries = load_blackboard(root, "task-1")
             self.assertEqual(entries["stage2-CoderAgent-模块A"].status, "success")
             self.assertEqual(entries["stage2-CoderAgent-模块B"].status, "failed")
@@ -461,6 +466,19 @@ class WorkerRunLedgerTests(unittest.TestCase):
             records = load_worker_runs(root, "task-1")
             self.assertEqual(records["stage2-CoderAgent-模块A"].status, "skipped")
             self.assertEqual(records["stage2-CoderAgent-模块B"].status, "success")
+            self.assertEqual(
+                [attempt.status for attempt in records["stage2-CoderAgent-模块B"].attempts],
+                ["running", "failed", "running", "success"],
+            )
+            self.assertTrue(records["stage2-CoderAgent-模块B"].attempts[1].error)
+            payload = json.loads(worker_runs_path(root, "task-1").read_text(encoding="utf-8"))
+            module_b = next(
+                item for item in payload["workers"] if item["worker_id"] == "stage2-CoderAgent-模块B"
+            )
+            self.assertEqual(
+                [attempt["status"] for attempt in module_b["attempts"]],
+                ["running", "failed", "running", "success"],
+            )
             entries = load_blackboard(root, "task-1")
             self.assertEqual(entries["stage2-CoderAgent-模块A"].status, "skipped")
             self.assertEqual(entries["stage2-CoderAgent-模块B"].status, "success")

@@ -479,3 +479,11 @@ python -m unittest discover -s tests
 - 怎么验证：`tests.test_adaptive_workflow::test_checkpoint_round_trips_latest_integrator_specs` 构造含 Integrator 的断点，断言落盘 JSON 和恢复状态都保留 `IntegratorAgent` spec。
 - 常见坑：不要只测“能暂停/能恢复”；那只能证明有 checkpoint 文件，不能证明返工所需的 coder/integrator specs 没丢。
 
+## 46. WorkerRun attempts 历史账本（v0.17.11）
+
+- 做什么：`logs/runs/<task_id>/workers.json` 的每个 worker 除了保留顶层最新状态，还追加 `attempts` 历史列表，记录每次 running / failed / success / skipped。
+- 为什么：以前 `_save_record()` 直接覆盖同一个 worker 的记录，失败后重试会抹掉前一次失败原因；排查真实 Agent 任务时看不到第一次为什么失败。
+- 怎么做：`WorkerRunRecord` 增加 `attempts`；保存时把当前记录转换成 `WorkerRunAttempt` 追加到旧 attempts；读取旧文件时如果没有 attempts，就用顶层记录补一条历史，保证兼容。
+- 怎么验证：`tests.test_adaptive_workflow` 中模块 B 先失败再成功，断言内存记录和 `workers.json` 都保留 `running -> failed -> running -> success`。
+- 常见坑：顶层字段仍表示最新状态，供 `should_skip_worker()` 快速判断；不要把 UI 或跳过逻辑改成只看 attempts 的最后一项，避免旧数据兼容问题。
+

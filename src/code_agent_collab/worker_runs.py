@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from threading import RLock, get_ident
@@ -16,6 +16,18 @@ from .file_utils import ensure_dir
 
 WorkerStatus = Literal["pending", "running", "success", "failed", "skipped"]
 _RUNS_LOCK = RLock()
+
+
+@dataclass(frozen=True)
+class WorkerRunAttempt:
+    attempt: int
+    status: WorkerStatus
+    input_hash: str
+    output_paths: list[str]
+    error: str
+    result: AgentResult | None
+    started_at: str
+    finished_at: str
 
 
 @dataclass(frozen=True)
@@ -33,6 +45,7 @@ class WorkerRunRecord:
     result: AgentResult | None
     started_at: str
     finished_at: str
+    attempts: list[WorkerRunAttempt] = field(default_factory=list)
 
 
 def worker_runs_path(project_root: Path, task_id: str) -> Path:
@@ -217,7 +230,9 @@ def _save_record(project_root: Path, task_id: str, record: WorkerRunRecord) -> N
         path = worker_runs_path(project_root, task_id)
         ensure_dir(path.parent)
         records = load_worker_runs(project_root, task_id)
-        records[record.worker_id] = record
+        previous = records.get(record.worker_id)
+        attempts = [*(previous.attempts if previous else []), _attempt_from_record(record)]
+        records[record.worker_id] = _with_attempts(record, attempts)
         payload = {
             "task_id": task_id,
             "updated_at": _now(),
@@ -243,13 +258,76 @@ def _record_to_json(record: WorkerRunRecord) -> dict:
         "result": _result_to_json(record.result) if record.result else None,
         "started_at": record.started_at,
         "finished_at": record.finished_at,
+        "attempts": [_attempt_to_json(attempt) for attempt in record.attempts],
     }
+
+
+def _with_attempts(record: WorkerRunRecord, attempts: list[WorkerRunAttempt]) -> WorkerRunRecord:
+    return WorkerRunRecord(
+        task_id=record.task_id,
+        stage_index=record.stage_index,
+        worker_id=record.worker_id,
+        role=record.role,
+        label=record.label,
+        status=record.status,
+        attempt=record.attempt,
+        input_hash=record.input_hash,
+        output_paths=record.output_paths,
+        error=record.error,
+        result=record.result,
+        started_at=record.started_at,
+        finished_at=record.finished_at,
+        attempts=attempts,
+    )
+
+
+def _attempt_from_record(record: WorkerRunRecord) -> WorkerRunAttempt:
+    return WorkerRunAttempt(
+        attempt=record.attempt,
+        status=record.status,
+        input_hash=record.input_hash,
+        output_paths=record.output_paths,
+        error=record.error,
+        result=record.result,
+        started_at=record.started_at,
+        finished_at=record.finished_at,
+    )
+
+
+def _attempt_to_json(attempt: WorkerRunAttempt) -> dict:
+    return {
+        "attempt": attempt.attempt,
+        "status": attempt.status,
+        "input_hash": attempt.input_hash,
+        "output_paths": attempt.output_paths,
+        "error": attempt.error,
+        "result": _result_to_json(attempt.result) if attempt.result else None,
+        "started_at": attempt.started_at,
+        "finished_at": attempt.finished_at,
+    }
+
+
+def _attempt_from_json(data: dict) -> WorkerRunAttempt | None:
+    try:
+        result_data = data.get("result")
+        return WorkerRunAttempt(
+            attempt=int(data.get("attempt", 0)),
+            status=str(data["status"]),  # type: ignore[arg-type]
+            input_hash=str(data.get("input_hash", "")),
+            output_paths=[str(item) for item in data.get("output_paths", [])],
+            error=str(data.get("error", "")),
+            result=_result_from_json(result_data) if isinstance(result_data, dict) else None,
+            started_at=str(data.get("started_at", "")),
+            finished_at=str(data.get("finished_at", "")),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _record_from_json(data: dict) -> WorkerRunRecord | None:
     try:
         result_data = data.get("result")
-        return WorkerRunRecord(
+        record = WorkerRunRecord(
             task_id=str(data["task_id"]),
             stage_index=int(data["stage_index"]),
             worker_id=str(data["worker_id"]),
@@ -264,6 +342,14 @@ def _record_from_json(data: dict) -> WorkerRunRecord | None:
             started_at=str(data.get("started_at", "")),
             finished_at=str(data.get("finished_at", "")),
         )
+        attempts = [
+            attempt
+            for attempt in (_attempt_from_json(item) for item in data.get("attempts", []))
+            if attempt is not None
+        ]
+        if not attempts:
+            attempts = [_attempt_from_record(record)]
+        return _with_attempts(record, attempts)
     except (KeyError, TypeError, ValueError):
         return None
 

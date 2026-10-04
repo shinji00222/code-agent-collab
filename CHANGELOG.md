@@ -1,5 +1,25 @@
 # 更新日志
 
+## v0.17.11 - 2026-10-04（WorkerRun attempts 历史账本版）
+
+### 修正：WorkerRun 保留每次运行尝试
+
+- `workers.json` 仍保留顶层最新状态，同时新增 `attempts` 历史列表，记录每次 running / failed / success / skipped 状态。
+- 旧 `workers.json` 没有 `attempts` 时，加载时会用顶层记录自动补一条历史，保持兼容。
+- N12 由“只保留最新状态”推进为已修复：失败后重试不会抹掉前一次失败原因。
+- 新增 `HANDOFF_DSH.md`，用于上下文不足时让 DSH 接手。
+
+### 边界
+
+- 这是可靠性修复版，不改变跳过成功 worker 的判定逻辑；`should_skip_worker()` 仍看顶层最新状态与 input hash。
+- 本轮未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+
+### 测试
+
+- 针对性测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; $env:PYTHONPATH='src'; python -m unittest tests.test_adaptive_workflow` → 14 项 OK。
+- 全量测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; python scripts/run-tests.py` → 223 项 OK。
+
+
 ## v0.17.10 - 2026-10-04（checkpoint integrator 状态回归版）
 
 ### 验证：checkpoint 保留 Integrator 返工状态
@@ -15,6 +35,7 @@
 ### 测试
 
 - 针对性测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; $env:PYTHONPATH='src'; python -m unittest tests.test_adaptive_workflow` → 14 项 OK。
+- 全量测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; python scripts/run-tests.py` → 223 项 OK。
 
 
 ## v0.17.9 - 2026-10-04（confirm 防覆盖安全修复版）
