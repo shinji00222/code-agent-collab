@@ -57,7 +57,8 @@ git commit -m "feat: queue and persist web jobs"
 7. `acad8f5 chore: add undefined-name static check script`
 8. v0.17.13 权限强制点与写入硬边界，提交信息：`feat: enforce runtime permission boundaries`
 9. v0.17.14 本机 Web API 请求加固，提交信息：`feat: harden local web api requests`
-10. v0.17.15 后台任务队列/去重/持久化 + 两处可靠性修复，提交信息：`feat: queue and persist web jobs`
+10. `92cbd31 fix: stabilise permission boundary path checks`（v0.17.15 的可靠性修复部分）
+11. `5067061 feat: queue and persist web jobs`（v0.17.15 的队列/持久化部分）
 
 ## 4. 已完成的问题闭环
 
