@@ -21,6 +21,12 @@ from .draft_review import (
     mentions_main_vault_outside_project,
 )
 from .file_utils import ensure_dir, read_text, write_text
+from .permissions import (
+    PROJECT_WRITE,
+    check_command,
+    check_write,
+    ensure_inside_project,
+)
 from .review import scan_sensitive
 
 # apply-draft 允许写入的目录（相对项目根）；其他区域一律拒绝
@@ -425,11 +431,24 @@ def _validate_approval(
     return errors
 
 
-def run_tests(project_root: Path, timeout_seconds: int = TEST_TIMEOUT_SECONDS) -> tuple[int, str]:
+def run_tests(
+    project_root: Path,
+    timeout_seconds: int = TEST_TIMEOUT_SECONDS,
+    *,
+    permission: object = PROJECT_WRITE,
+) -> tuple[int, str]:
     env = _test_env(project_root)
+    argv = [sys.executable, "-m", "unittest", "discover", "-s", "tests"]
+    check_command(
+        permission,
+        argv,
+        action="运行项目测试",
+        cwd=project_root,
+        project_root=project_root,
+    )
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+            argv,
             cwd=project_root,
             check=False,
             capture_output=True,
@@ -467,12 +486,17 @@ def _is_sensitive_env_item(key: str, value: str) -> bool:
     return False
 
 
-def _run_isolated_tests(project_root: Path, changes: list[DraftChange]) -> tuple[int, str]:
+def _run_isolated_tests(
+    project_root: Path,
+    changes: list[DraftChange],
+    *,
+    permission: object = PROJECT_WRITE,
+) -> tuple[int, str]:
     with tempfile.TemporaryDirectory(prefix="agent-workbench-apply-") as tmp:
         trial_root = Path(tmp) / project_root.name
         shutil.copytree(project_root, trial_root, ignore=_ignore_trial_copy)
-        _apply_changes(trial_root, changes)
-        return run_tests(trial_root)
+        _apply_changes(trial_root, changes, permission=permission)
+        return run_tests(trial_root, permission=permission)
 
 
 def _ignore_trial_copy(directory: str, names: list[str]) -> set[str]:
@@ -487,15 +511,32 @@ def git_commit(
     project_root: Path,
     message: str,
     paths: list[str] | None = None,
+    *,
+    permission: object = PROJECT_WRITE,
 ) -> tuple[bool, str]:
     """提交改动。
 
     paths 非空时只暂存这些路径（apply-draft 的批准清单），避免把无关改动卷进提交；
     paths 为空时保持旧的 `git add -A` 行为，供其他调用方使用。
+
+    暂存清单里的每个路径都必须落在项目内，否则拒绝执行（防止把项目外的内容提进来）。
     """
     if not (project_root / ".git").exists():
         return False, "不是 Git 仓库，跳过自动提交"
+    for path in paths or []:
+        ensure_inside_project(
+            project_root / path,
+            project_root,
+            action=f"暂存批准清单路径 {path}",
+        )
     add_args = ["git", "add", "--", *paths] if paths else ["git", "add", "-A"]
+    check_command(
+        permission,
+        add_args,
+        action="暂存改动",
+        cwd=project_root,
+        project_root=project_root,
+    )
     add = subprocess.run(
         add_args,
         cwd=project_root,
@@ -507,8 +548,16 @@ def git_commit(
     )
     if add.returncode != 0:
         return False, add.stderr.strip()
+    commit_args = ["git", "commit", "-m", message]
+    check_command(
+        permission,
+        commit_args,
+        action="创建本地提交",
+        cwd=project_root,
+        project_root=project_root,
+    )
     commit = subprocess.run(
-        ["git", "commit", "-m", message],
+        commit_args,
         cwd=project_root,
         check=False,
         capture_output=True,
@@ -560,19 +609,34 @@ def find_draft_path(project_root: Path, task: str) -> Path:
     return matches[0]
 
 
-def _apply_changes(project_root: Path, changes: list[DraftChange]) -> dict[str, str | None]:
-    """写文件并返回 {路径: 旧内容} 备份（旧文件不存在时为 None）。"""
+def _apply_changes(
+    project_root: Path,
+    changes: list[DraftChange],
+    *,
+    permission: object = PROJECT_WRITE,
+) -> dict[str, str | None]:
+    """写文件并返回 {路径: 旧内容} 备份（旧文件不存在时为 None）。
+
+    这是唯一会把草稿内容落成项目文件的入口，所以每个目标在写入前都要过权限强制点。
+    """
     backup: dict[str, str | None] = {}
     for change in changes:
         target = project_root / change.path
+        check_write(permission, target, project_root, action=f"写入项目文件 {change.path}")
         backup[change.path] = read_text(target) if target.exists() else None
         write_text(target, change.content)
     return backup
 
 
-def _rollback_changes(project_root: Path, backup: dict[str, str | None]) -> None:
+def _rollback_changes(
+    project_root: Path,
+    backup: dict[str, str | None],
+    *,
+    permission: object = PROJECT_WRITE,
+) -> None:
     for path, old in backup.items():
         target = project_root / path
+        check_write(permission, target, project_root, action=f"回滚项目文件 {path}")
         if old is None:
             if target.exists():
                 target.unlink()
@@ -586,8 +650,13 @@ def apply_draft_workflow(
     apply: bool,
     *,
     require_approval: bool = True,
+    permission: object = PROJECT_WRITE,
 ) -> ApplyResult:
-    """apply-draft 主流程：解析 → 校验 → 预览（或 应用→测试→提交/回滚）。"""
+    """apply-draft 主流程：解析 → 校验 → 预览（或 应用→测试→提交/回滚）。
+
+    `permission` 是调用方声明的当前权限级别，会传给写入/命令强制点。
+    `apply-draft --apply` 属于人工确认过的改源码操作，用默认的 L2_PROJECT_WRITE。
+    """
     content = read_text(draft_path)
     parsed = parse_draft(content)
     if parsed.errors:
@@ -634,7 +703,7 @@ def apply_draft_workflow(
             diffs=diffs,
         )
 
-    code, output = _run_isolated_tests(project_root, parsed.changes)
+    code, output = _run_isolated_tests(project_root, parsed.changes, permission=permission)
     if code != 0:
         return ApplyResult(
             ok=False,
@@ -644,10 +713,10 @@ def apply_draft_workflow(
             diffs=diffs,
         )
 
-    backup = _apply_changes(project_root, parsed.changes)
-    code, output = run_tests(project_root)
+    backup = _apply_changes(project_root, parsed.changes, permission=permission)
+    code, output = run_tests(project_root, permission=permission)
     if code != 0:
-        _rollback_changes(project_root, backup)
+        _rollback_changes(project_root, backup, permission=permission)
         return ApplyResult(
             ok=False,
             stage="正式测试",
@@ -661,6 +730,7 @@ def apply_draft_workflow(
         project_root,
         f"apply-draft: {draft_path.stem}",
         paths=[change.path for change in parsed.changes],
+        permission=permission,
     )
     if not committed:
         return ApplyResult(

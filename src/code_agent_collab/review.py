@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .config import load_config
 from .file_utils import ensure_dir, read_text, write_text
+from .permissions import CONFIRM_REQUIRED, DRAFT_WRITE, PermissionDenied, check_write
 from .providers import AIProvider
 
 SENSITIVE_PATTERNS: dict[str, re.Pattern] = {
@@ -121,10 +122,27 @@ def _resolve_target(project_root: Path, ai_target: str) -> Path:
     return vault
 
 
-def _write_to_vault(project_root: Path, content: str, target_dir: Path, source_name: str) -> Path:
+def _write_to_vault(
+    project_root: Path,
+    content: str,
+    target_dir: Path,
+    source_name: str,
+    *,
+    permission: object = CONFIRM_REQUIRED,
+) -> Path:
+    """把候选内容写进知识库。
+
+    这是整个项目里唯一可能写到项目目录之外的落盘点（知识库路径可配置），
+    所以它同时受两层约束：
+
+    1. 权限级别必须达到 L3_CONFIRM_REQUIRED（只有走人工确认的调用方才行）；
+    2. **硬边界**：目标必须落在项目目录内。项目外的知识库路径一律拒绝，
+       任何权限级别都不能解锁——本项目只写自己的独立知识库 dev-vault/project-vault。
+    """
+    target = target_dir / source_name
+    check_write(permission, target, project_root, action="知识入库写入")
     ensure_dir(target_dir)
     cleaned = _strip_machine_paths(content)
-    target = target_dir / source_name
     if target.exists():
         raise FileExistsError(f"目标文件已存在，拒绝覆盖：{target}")
     write_text(target, cleaned)
@@ -193,11 +211,18 @@ def review_pending_note(
 
     # AI 审查通过：只记录 AI 建议的写入位置，绝不自动入库，必须人工确认
     if ai_target:
+        check_write(DRAFT_WRITE, path, project_root, action="记录 AI 建议写入位置")
         write_text(path, content.rstrip() + f"\n{AI_TARGET_PREFIX}{ai_target}\n")
     return _mark_status(path, "待人工确认", "AI 审查通过，建议入库，等待人工确认", now)
 
 
-def confirm_pending_note(project_root: Path, path: Path, now: datetime | None = None) -> ReviewResult:
+def confirm_pending_note(
+    project_root: Path,
+    path: Path,
+    now: datetime | None = None,
+    *,
+    permission: object = CONFIRM_REQUIRED,
+) -> ReviewResult:
     now = now or datetime.now()
     content = read_text(path)
     sensitive = scan_sensitive(_body_without_metadata(content))
@@ -222,7 +247,20 @@ def confirm_pending_note(project_root: Path, path: Path, now: datetime | None = 
             reason=reason,
             target_path=target_path,
         )
-    target_path = _write_to_vault(project_root, content, target_dir, path.name)
+    try:
+        target_path = _write_to_vault(
+            project_root,
+            content,
+            target_dir,
+            path.name,
+            permission=permission,
+        )
+    except PermissionDenied as exc:
+        # 写入被硬边界拒绝（目标在项目目录之外）：不抛到调用方，转成可读的「待人工处理」，
+        # 让 CLI/网页能把原因显示出来，同时保证目标文件没有被创建。
+        reason = f"拒绝写入：{exc}"
+        _mark_status(path, "待人工处理", reason, now)
+        return ReviewResult(path=path, status="待人工处理", reason=reason)
     relative = target_path.resolve().relative_to(vault.resolve())
     _mark_status(path, f"已确认入库：{relative}", f"人工确认，写入 {relative}", now)
     return ReviewResult(

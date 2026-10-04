@@ -498,4 +498,20 @@ python -m unittest discover -s tests
   2. 拆分模块后要专门找"引用了但没定义/没导入"的全局名字。项目自带脚本 `python scripts/check-undefined-names.py src tests`（`symtable` 按作用域扫描，退出码 1 表示有命中）。
   3. 判断"打包版能不能用"不能只看 EXE 存在或窗口能打开，必须让 frozen 分支真正执行一次。
 
+## 48. 运行时权限强制点与「项目外一律不写」硬边界（v0.17.13）
+
+- 做什么：把 `PermissionLevel` 从「只是标注」变成真正的运行时检查；并定下一条硬规则——**程序只写当前项目目录内，项目之外一律拒绝**。
+- 为什么：以前 `PermissionLevel` 只写进日志和账本，运行时零检查（台账 N5）；`mainVaultDefaultMode` / `devVaultDefaultMode` 更是从没被任何代码用于强制（台账 N14）。同时 shin 明确要求「这个项目要有自己独立的知识库，不能写到库之外」。
+- 怎么做：
+  - 新增 `src/code_agent_collab/permissions.py`（**叶子模块**，不 import 本项目其它模块）。按落点分区：`runtime`（`logs/`、`.agent-workbench/`）≥L0；`draft`（`dev-vault/`）≥L1；`project-source`（`src/`、`tests/`、文档）≥L2；**`outside-project` 一律拒绝**（`DENIED_ZONES`，不参与级别比较）。
+  - 级别字符串只在 `permissions.py` 定义一次，`agents/base.py` 的 `PermissionLevel` 从它取值——避免「两处各写一份枚举值」的隐性分叉。
+  - 提供三个原语：`check_write()`（写入前）、`check_command()`（起子进程前，且 `cwd` 必须在项目内）、`ensure_inside_project()`（一批路径交给外部命令前，例如 `git add -- <paths>`）。
+  - 接入点：`apply.py`（写文件、回滚、跑测试、git 暂存与提交）、`agents/coder.py` / `agents/integrator.py`（草稿写入，用各自的 `self.permission`，所以声明 L1 的 Agent 写不了 `src/`）、`agents/knowledge.py`（检索摘录，显式声明 logs 属运行时区域）、`review.py`（候选状态 + `confirm` 入库）。
+- 怎么验证：`tests/test_permissions.py` 18 项覆盖区域判定、级别单调性、**项目外对所有级别都拒绝**、命令 `cwd` 约束、`..` 逃逸；`tests/test_review.py` 覆盖「配置指向项目外」和「环境变量重定向到项目外」两种拒绝，并断言目标文件**没有被创建**。
+- 常见坑：
+  1. **不要给「系统临时目录」开例外**。第一版把整个 `%TEMP%` 当作可写区域，结果测试用例（夹具把知识库放在 `tempfile` 里）看起来全绿，实际边界是漏的。正确做法：隔离测试副本用 `project_root=副本目录` 调用，副本自身就是项目根，**不需要任何例外**。
+  2. **改边界一定会打到既有测试**：原来夹具把「知识库」放在项目同级目录模拟真实知识库，硬边界一上就必须把它们改成「写入目标在项目内、项目外库只读」，并把原「写入沙箱」用例改写成「拒绝写入」用例。这是预期的，不要为了让测试变绿而放宽边界。
+  3. **别把「改外部代码」和「外部写入」混为一谈**。要改另一个代码库，正确做法是把项目根指过去（`--project-root` / `AGENT_WORKBENCH_PROJECT_ROOT`），那个库就成了当前项目，边界依然成立；不要再开一个「外部可写目录」的口子。
+  4. `permissions.py` 必须保持叶子模块：`agents/base.py` 反向引用它，一旦它去 import `agents` 或 `apply`，就会出现「包初始化到一半」的循环导入。级别用字符串值比较，传枚举或传字符串都可以。
+
 

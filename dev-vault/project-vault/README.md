@@ -13,34 +13,36 @@
 - **读**：程序会去检索你电脑上的一整个知识库目录。只要配置写错或缺失，
   就可能读到不该读的地方，属于权限过宽。
 
-所以现在改成：**读写都收进这个项目目录**。要接真实知识库，必须显式配置。
+所以现在改成：**读写都收进这个项目目录**。读取可以显式接到外部知识库，写入不行（见下）。
 
 ## 行为说明
 
-| 动作 | 默认目标 | 怎么改成真实知识库 |
+| 动作 | 默认目标 | 能不能改成项目外 |
 | --- | --- | --- |
 | `review`（AI 审查候选） | 只改 `dev-vault/pending` 的状态行 | 不涉及 |
-| 知识检索（KnowledgeAgent） | **本目录** | 配置 `mainVaultPath` |
-| `confirm`（人工确认入库） | **本目录** | 配置 `mainVaultWritePath` |
+| 知识检索（KnowledgeAgent） | **本目录** | 可以，配置 `mainVaultPath`（只读） |
+| `confirm`（人工确认入库） | **本目录** | **不行**：项目外写入一律被拒绝 |
 
-配置方式（二选一）：
+检索接外部知识库（只读，二选一）：
 
 ```jsonc
 // .agent-workbench/config.json
 {
-  "mainVaultPath": "C:/你的/真实/知识库",          // 读取来源
-  "mainVaultWritePath": "C:/你的/真实/知识库"      // 写入目标
+  "mainVaultPath": "C:/你的/真实/知识库"     // 只影响读取
 }
 ```
 
-或者用环境变量（适合一次性操作，优先级更高）：
+或者用环境变量 `AGENT_WORKBENCH_MAIN_VAULT`（一次性操作，优先级更高）：
 
 ```powershell
-$env:AGENT_WORKBENCH_MAIN_VAULT       = "C:\你的\真实\知识库"   # 读取
-$env:AGENT_WORKBENCH_MAIN_VAULT_WRITE = "C:\你的\真实\知识库"   # 写入
+$env:AGENT_WORKBENCH_MAIN_VAULT = "C:\你的\真实\知识库"   # 只读检索
 ```
 
-**两个都不配 = 完全隔离**。这是刻意的安全默认值，不是配置漏了。
+**写入目标必须是项目内路径。** 从 v0.17.13 起，把 `mainVaultWritePath` 或
+`AGENT_WORKBENCH_MAIN_VAULT_WRITE` 指向项目之外时，`confirm` 不会写入任何文件，
+而是把候选标成「待人工处理」并写明「拒绝写入」。这是刻意的硬边界：本项目要有自己独立的知识库。
+
+**检索也不配 = 完全隔离**。这是刻意的安全默认值，不是配置漏了。
 
 ## 目录约定
 

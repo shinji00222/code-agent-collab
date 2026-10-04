@@ -1,5 +1,38 @@
 # 更新日志
 
+## v0.17.13 - 2026-10-04（权限运行时强制点 + 项目外写入硬边界版）
+
+### 新增：运行时权限强制点（台账 N5）
+
+- 新增 `src/code_agent_collab/permissions.py`：按**写入目标落在哪里**划分区域，每个区域有最低权限要求；调用方必须显式声明当前权限级别，不通过就抛 `PermissionDenied`。
+- 级别定义收敛到这一处：`agents/base.py` 的 `PermissionLevel` 改为从 `permissions` 取值，避免两边各写一份字符串。
+- 接入的关键路径：`apply.py` 的 `_apply_changes` / `_rollback_changes` / `run_tests` / `git_commit`；`agents/coder.py`、`agents/integrator.py` 的草稿写入；`agents/knowledge.py` 的检索摘录写入；`review.py` 的候选状态写入与 `confirm` 入库写入。
+
+### 行为变更（重要）：项目之外的写入一律拒绝
+
+- **硬边界**：目标落在项目目录之外的写入一律拒绝，**与权限级别无关**，没有任何级别可以解锁。
+  本项目自己的知识库就是项目内的 `dev-vault/project-vault`。
+- 具体影响：把 `mainVaultWritePath`（或环境变量 `AGENT_WORKBENCH_MAIN_VAULT_WRITE`）指向项目外的知识库时，`confirm` 不再写入，而是把候选标记为「待人工处理」并说明「拒绝写入」；目标文件不会被创建。
+- `git_commit` 的暂存清单、`run_tests` 的工作目录同样必须落在项目内。
+- **要改别的代码库怎么办**：把「项目根」指到那个代码库即可（CLI `--project-root <目录>`，或环境变量 `AGENT_WORKBENCH_PROJECT_ROOT`）。那时那个代码库就是当前项目，写入都落在它自己里面，边界依然成立。实测：对一个项目外的演示仓库执行 `start ... --project-root <该仓库>`，上下文包生成在 `<该仓库>/logs/context-packs/`。
+- 隔离测试副本不需要例外：它虽然建在系统临时目录，但写入以 `project_root=副本目录` 调用，副本自身就是当时的项目根。所以这次**没有**留「临时目录例外」。
+
+### 新增测试
+
+- 新增 `tests/test_permissions.py`（18 项）：区域判定、各级别可写范围、项目外对**所有**级别都拒绝、命令工作目录约束、`ensure_inside_project` 的 `..` 逃逸拦截。
+- `tests/test_review.py`：夹具改为「写入目标在项目内、项目外的真实知识库只读」，新增两项项目外拒绝用例（配置指向项目外、环境变量重定向到项目外），原「写入沙箱」用例相应改写。
+
+### 边界
+
+- 本次**没有**给项目外写入留任何例外开关。以后若确实要让工具改另一个代码库，请用 `--project-root`，不要再加外部写入出口。
+- 子代理只读复查已找出仍未被 guard 覆盖的写入点（运行时账本、`progress`/`control` 的环境变量覆盖、MCP 子进程等），已单独记入问题台账，不在本次范围内。
+- 本轮未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+
+### 测试
+
+- 全量测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; python scripts/run-tests.py` → **243 项 OK**（原 225 + 新增 18）。
+
+
 ## v0.17.12 - 2026-10-04（打包版 CLI 调用回归修复版）
 
 ### 修正：打包版窗口一提交任务就 `NameError`

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..apply import FALLBACK_MARKER, parse_draft
 from ..file_utils import ensure_dir, write_text
+from ..permissions import check_write
 from ..providers import AIProvider, create_provider
 from .base import AgentContext, AgentResult, BaseAgent, PermissionLevel
 
@@ -27,6 +28,12 @@ class IntegratorAgent(BaseAgent):
             content = self._integrate(context, draft_paths)
 
         ensure_dir(output_path.parent)
+        check_write(
+            self.permission,
+            output_path,
+            context.project_root,
+            action="IntegratorAgent 写合并草稿",
+        )
         write_text(output_path, content + "\n")
         return AgentResult(
             role=self.role,

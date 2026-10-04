@@ -4,12 +4,20 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from .. import permissions
+
 
 class PermissionLevel(str, Enum):
-    READ_ONLY = "L0_READ_ONLY"
-    DRAFT_WRITE = "L1_DRAFT_WRITE"
-    PROJECT_WRITE = "L2_PROJECT_WRITE"
-    CONFIRM_REQUIRED = "L3_CONFIRM_REQUIRED"
+    """权限级别。
+
+    取值统一来自 `permissions` 模块，保证「级别定义」只有一处（台账 N5）；
+    运行时强制点见 `permissions.check_write()` / `permissions.check_command()`。
+    """
+
+    READ_ONLY = permissions.READ_ONLY
+    DRAFT_WRITE = permissions.DRAFT_WRITE
+    PROJECT_WRITE = permissions.PROJECT_WRITE
+    CONFIRM_REQUIRED = permissions.CONFIRM_REQUIRED
 
 
 @dataclass(frozen=True)

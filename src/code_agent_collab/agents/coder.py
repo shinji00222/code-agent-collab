@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..file_utils import read_text, write_text
+from ..permissions import check_write
 from ..providers import AIProvider, create_provider
 from .base import AgentContext, AgentResult, BaseAgent, PermissionLevel
 
@@ -121,6 +122,12 @@ class CoderAgent(BaseAgent):
                 "- 当前内容只写入 `dev-vault/projects`。",
                 "- 写入正式项目文件前必须经过检查和用户确认。",
             ]
+        )
+        check_write(
+            self.permission,
+            output_path,
+            context.project_root,
+            action="CoderAgent 写代码草稿",
         )
         write_text(output_path, content + "\n")
         return AgentResult(

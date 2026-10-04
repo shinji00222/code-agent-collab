@@ -21,7 +21,8 @@
 
 - 不删除、覆盖用户文件，不扩大任务范围。
 - 不把 API Key、密码、令牌、Cookie、本机路径写进仓库、文档或日志。
-- 知识库默认全隔离：读和写都在项目自有知识库 `dev-vault/project-vault`，接入外部知识库必须显式配置。
+- 知识库默认全隔离：读和写都在项目自有知识库 `dev-vault/project-vault`。**写入硬边界**：任何落在项目目录之外的写入一律拒绝（`permissions.check_write()`），与权限级别无关；`mainVaultPath` 只能改读取来源，写入目标配置到项目外会被拒绝。
+- 要改别的代码库（而不是本项目），把项目根指过去：`--project-root <目录>` 或环境变量 `AGENT_WORKBENCH_PROJECT_ROOT`；那时那个代码库就是当前项目，写入仍落在它自己里面。
 - 上传 GitHub、发布 Release 前：测试通过、仓库干净、安全扫描（敏感信息）、带版本说明。
 - **发现的问题必须写进问题台账**；修复后立刻回填状态、提交号和验证方式，不能只留在聊天记录或 `CHANGELOG.md` 里。
 - Markdown 文件名统一使用英文；内容可以继续使用中文，便于维护和学习。公开入口优先使用 `README.md`、`CHANGELOG.md`、`VERSIONING.md`、`MAINTENANCE.md`、`SKILLS.md` 这类英文文件名，避免 GitHub 链接、脚本和跨平台命令行里的中文路径成本。

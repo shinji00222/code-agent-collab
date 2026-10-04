@@ -125,7 +125,7 @@ python -m unittest discover -s tests            # 跑全部测试
 2. 运行 `review`：先本地扫描敏感信息（API 密钥、密码/令牌、手机号、邮箱），再让 AI 判断价值、重复和建议写入位置。
 3. 安全候选只会标记为"待人工确认"，不会自动写入任何知识库；敏感或 AI 不建议的候选状态变为"待人工处理"。
 4. 由你决定：`confirm` 人工确认入库（仍会拦截敏感信息）或 `discard` 废弃。
-5. **检索来源和写入目标默认都是项目自有知识库 `dev-vault/project-vault`，程序默认不读也不写外部知识库。** 要接真实知识库必须显式配置 `mainVaultPath` / `mainVaultWritePath`，细节见 `dev-vault/project-vault/README.md`。
+5. **检索来源和写入目标默认都是项目自有知识库 `dev-vault/project-vault`。** 检索可以显式改到外部（只读）；**写入不能离开项目**：把 `mainVaultWritePath` 配到项目之外会被硬边界拒绝，`confirm` 会把候选标成「待人工处理」并说明原因。细节见 `dev-vault/project-vault/README.md`。
 6. 做隔离演练时用 `review --task "关键词"` 限定范围，否则 `review` 会审查并改状态 `pending` 下的**所有**候选。
 
 ### 知识流向
@@ -144,7 +144,7 @@ Planner / Coder / Reviewer / Validator / Reflector 按职责处理
 review 只标记状态；confirm 由人触发，默认写回 dev-vault/project-vault
 ```
 
-外部知识库默认不接入。只有显式配置 `mainVaultPath` / `mainVaultWritePath`，程序才会读或写外部知识库。
+外部知识库可以显式接入**只读检索**（配置 `mainVaultPath`）；**写入永远留在项目内**，`mainVaultWritePath` 指向项目之外会被 `permissions.check_write()` 拒绝。
 
 ### 问题台账维护（强制，详见 AGENTS.md 同名小节）
 
@@ -192,8 +192,20 @@ review 只标记状态；confirm 由人触发，默认写回 dev-vault/project-v
 写入目标 = `mainVaultWritePath` / `AGENT_WORKBENCH_MAIN_VAULT_WRITE`。
 
 - 两个都不配置 → 都指向项目自有知识库 `dev-vault/project-vault`，外部知识库既不读也不写（安全默认）。
-- 配置成外部知识库路径 → 该方向才会碰到外部知识库：`mainVaultPath` 让检索读它，`mainVaultWritePath` 让 `confirm` 写它。
+- `mainVaultPath` 配置成外部路径 → 检索会读它（只读）。
+- **`mainVaultWritePath` 配置成项目之外的路径 → 写入会被拒绝**（v0.17.13 起的硬边界）：`confirm` 把候选标记为「待人工处理」并说明「拒绝写入」，目标文件不会被创建。本项目只写自己项目内的知识库。
 - 默认值的来源是 `config.py` 的 `default_vault_path()`；改动它等于改变全项目的安全默认，属于高影响改动。
+
+### 想让工具改别的代码库
+
+不要给外部写入开出口，改成把「项目根」指过去：
+
+```powershell
+$env:PYTHONPATH="src"
+python -m code_agent_collab.cli start "任务目标" --project-root D:\另一个代码库
+```
+
+或用环境变量 `AGENT_WORKBENCH_PROJECT_ROOT`。那时那个代码库就是当前项目：日志、草稿、知识库都建在它里面，写入边界依然成立（只写当前项目内）。
 
 ### 修改本地配置
 
@@ -202,16 +214,19 @@ review 只标记状态；confirm 由人触发，默认写回 dev-vault/project-v
 ```json
 {
   "projectName": "多Agent代码协作助手",
-  "mainVaultPath": "项目的 dev-vault\\project-vault 路径（或你的外部知识库路径）",
+  "mainVaultPath": "项目的 dev-vault\\project-vault 路径（或你的外部知识库路径，只用于读取）",
   "devVaultPath": "项目的 dev-vault 路径",
   "mainVaultDefaultMode": "readonly",
   "devVaultDefaultMode": "readwrite",
-  "mainVaultWritePath": "项目的 dev-vault\\project-vault 路径（或你的外部知识库路径）"
+  "mainVaultWritePath": "必须是项目内的路径，通常是项目的 dev-vault\\project-vault"
 }
 ```
 
-说明：`mainVaultDefaultMode` / `devVaultDefaultMode` 目前只是声明性字段，运行时不参与强制校验；
-真正的只读保障是「全项目只有一个写入调用点」，加新写入路径时必须自己守住它。
+说明：
+
+- `mainVaultDefaultMode` / `devVaultDefaultMode` 仍然是声明性字段，不参与运行时强制校验。
+- 写入目标必须是项目内路径，这是 `permissions.check_write()` 的硬边界；项目外写入没有开关可以解锁。
+- 各个写入点现在都会过 `check_write()`：`logs/` 属运行时区域（L0 可写）、`dev-vault/` 属草稿区域（L1）、`src/` 与 `tests/` 属正式源码（L2），项目外一律拒绝。
 
 ### 早期草案已合并
 

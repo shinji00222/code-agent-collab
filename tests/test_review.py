@@ -24,25 +24,32 @@ def _make_project(
     *,
     write_vault: Path | None = None,
     include_write_key: bool = True,
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path]:
+    """返回 (项目根, 项目自有知识库, 项目外的真实知识库)。
+
+    默认写入目标是**项目内**的项目自有知识库 `dev-vault/project-vault`；
+    `real_vault` 刻意放在项目之外，只用来验证「项目之外的知识库零写入」。
+    """
     project_root = Path(tmp) / "project"
     project_root.mkdir()
     (project_root / "dev-vault" / "pending").mkdir(parents=True)
-    vault = Path(tmp) / "vault"
-    (vault / "04-知识" / "02-Codex知识" / "04-复盘").mkdir(parents=True)
+    project_vault = project_root / "dev-vault" / "project-vault"
+    (project_vault / "04-知识" / "02-Codex知识" / "04-复盘").mkdir(parents=True)
+    real_vault = Path(tmp) / "vault"
+    (real_vault / "04-知识" / "02-Codex知识" / "04-复盘").mkdir(parents=True)
     payload = {
         "projectName": "demo",
-        "mainVaultPath": vault.as_posix(),
+        "mainVaultPath": real_vault.as_posix(),
         "devVaultPath": (project_root / "dev-vault").as_posix(),
     }
     if include_write_key:
-        # 既有用例默认让写入目标等于读取库，保持原有语义；
-        # 沙箱隔离行为由下面的专门用例覆盖。
-        payload["mainVaultWritePath"] = (write_vault or vault).as_posix()
+        # 默认让写入目标等于项目自有知识库（项目内）；
+        # 「写到项目之外」的行为由下面的专门用例覆盖。
+        payload["mainVaultWritePath"] = (write_vault or project_vault).as_posix()
     config_dir = project_root / ".agent-workbench"
     config_dir.mkdir()
     (config_dir / "config.json").write_text(json.dumps(payload), encoding="utf-8")
-    return project_root, vault
+    return project_root, project_vault, real_vault
 
 
 def _write_note(project_root: Path, name: str, body: str) -> Path:
@@ -71,7 +78,7 @@ class SensitiveScanTests(unittest.TestCase):
 class ReviewFlowTests(unittest.TestCase):
     def test_mock_review_holds_for_human_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            project_root, vault = _make_project(tmp)
+            project_root, project_vault, real_vault = _make_project(tmp)
             note = _write_note(project_root, "2026-08-20-任务A-复利候选.md", "内容安全，值得记录。")
 
             result = review_pending_note(
@@ -83,14 +90,15 @@ class ReviewFlowTests(unittest.TestCase):
 
             self.assertEqual(result.status, "待人工确认")
             self.assertIsNone(result.target_path)
-            self.assertFalse(list(vault.rglob("*.md")))
+            self.assertFalse(list(real_vault.rglob("*.md")))
+            self.assertFalse(list(project_vault.rglob("*.md")))
             note_content = note.read_text(encoding="utf-8")
             self.assertIn("待人工确认", note_content)
             self.assertIn("AI 审查通过", note_content)
 
     def test_sensitive_note_is_held_for_human(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            project_root, vault = _make_project(tmp)
+            project_root, project_vault, real_vault = _make_project(tmp)
             note = _write_note(
                 project_root,
                 "2026-08-20-任务B-复利候选.md",
@@ -106,12 +114,12 @@ class ReviewFlowTests(unittest.TestCase):
 
             self.assertEqual(result.status, "待人工处理")
             self.assertIn("敏感信息", result.reason)
-            self.assertFalse(list(vault.rglob("*.md")))
+            self.assertFalse(list(real_vault.rglob("*.md")))
             self.assertIn("待人工处理", note.read_text(encoding="utf-8"))
 
     def test_confirm_writes_and_discard_marks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            project_root, vault = _make_project(tmp)
+            project_root, project_vault, real_vault = _make_project(tmp)
             note = _write_note(project_root, "2026-08-20-任务C-复利候选.md", "内容安全。")
 
             confirmed = confirm_pending_note(
@@ -120,7 +128,11 @@ class ReviewFlowTests(unittest.TestCase):
                 now=datetime(2026, 8, 20, 15, 0, 0),
             )
             self.assertEqual(confirmed.status, "已确认入库")
-            self.assertIsNotNone(confirmed.target_path)
+            assert confirmed.target_path is not None
+            self.assertTrue(confirmed.target_path.exists())
+            # 写入必须落在项目自己的知识库里，项目外零写入
+            self.assertIn(project_vault.resolve(), confirmed.target_path.resolve().parents)
+            self.assertFalse(list(real_vault.rglob("*.md")))
 
             note2 = _write_note(project_root, "2026-08-20-任务D-复利候选.md", "内容安全。")
             discarded = discard_pending_note(note2, now=datetime(2026, 8, 20, 15, 0, 0))
@@ -129,7 +141,7 @@ class ReviewFlowTests(unittest.TestCase):
 
     def test_confirm_blocks_sensitive_note(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            project_root, vault = _make_project(tmp)
+            project_root, project_vault, real_vault = _make_project(tmp)
             note = _write_note(
                 project_root,
                 "2026-08-20-任务E-复利候选.md",
@@ -143,11 +155,12 @@ class ReviewFlowTests(unittest.TestCase):
             )
 
             self.assertEqual(result.status, "待人工处理")
-            self.assertFalse(list(vault.rglob("*.md")))
+            self.assertFalse(list(real_vault.rglob("*.md")))
+            self.assertFalse(list(project_vault.rglob("*.md")))
 
     def test_confirm_refuses_to_overwrite_existing_vault_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            project_root, vault = _make_project(tmp)
+            project_root, project_vault, real_vault = _make_project(tmp)
             note = _write_note(project_root, "2026-08-20-任务K-复利候选.md", "第一次内容。")
             first = confirm_pending_note(
                 project_root,
@@ -172,7 +185,7 @@ class ReviewFlowTests(unittest.TestCase):
 
     def test_find_pending_path_by_keyword(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            project_root, _ = _make_project(tmp)
+            project_root, _, _ = _make_project(tmp)
             note = _write_note(project_root, "2026-08-20-任务F-复利候选.md", "内容。")
 
             found = find_pending_path(project_root, "任务F")
@@ -181,8 +194,8 @@ class ReviewFlowTests(unittest.TestCase):
 
     def test_confirm_uses_ai_suggested_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            project_root, vault = _make_project(tmp)
-            (vault / "02-知识" / "01-测试").mkdir(parents=True)
+            project_root, project_vault, real_vault = _make_project(tmp)
+            (project_vault / "02-知识" / "01-测试").mkdir(parents=True)
             note = _write_note(project_root, "2026-08-20-任务G-复利候选.md", "内容安全。")
             content = note.read_text(encoding="utf-8")
             note.write_text(
@@ -199,17 +212,20 @@ class ReviewFlowTests(unittest.TestCase):
             self.assertEqual(result.status, "已确认入库")
             self.assertIsNotNone(result.target_path)
             assert result.target_path is not None
-            self.assertEqual(result.target_path.parent, vault / "02-知识" / "01-测试")
+            self.assertEqual(result.target_path.parent, project_vault / "02-知识" / "01-测试")
             self.assertTrue(result.target_path.exists())
 
 
-    def test_confirm_writes_to_sandbox_and_leaves_main_vault_untouched(self) -> None:
-        """写入沙箱与真实主知识库分离时，确认入库只落沙箱。"""
+    def test_confirm_refuses_write_target_outside_project(self) -> None:
+        """硬边界：写入目标落在项目之外时一律拒绝，不创建任何文件。
+
+        这是 shin 明确的规则：项目要有自己独立的知识库，程序不写到项目之外。
+        """
         with tempfile.TemporaryDirectory() as tmp:
-            sandbox = Path(tmp) / "sandbox"
-            sandbox.mkdir()
-            project_root, vault = _make_project(tmp, write_vault=sandbox)
-            (sandbox / "04-知识" / "02-Codex知识" / "04-复盘").mkdir(parents=True)
+            outside = Path(tmp) / "outside-vault"
+            outside.mkdir()
+            (outside / "04-知识" / "02-Codex知识" / "04-复盘").mkdir(parents=True)
+            project_root, project_vault, real_vault = _make_project(tmp, write_vault=outside)
             note = _write_note(project_root, "2026-08-20-任务H-复利候选.md", "内容安全。")
 
             result = confirm_pending_note(
@@ -218,19 +234,19 @@ class ReviewFlowTests(unittest.TestCase):
                 now=datetime(2026, 8, 20, 15, 0, 0),
             )
 
-            self.assertEqual(result.status, "已确认入库")
-            assert result.target_path is not None
-            self.assertEqual(
-                result.target_path.parent,
-                sandbox / "04-知识" / "02-Codex知识" / "04-复盘",
-            )
-            self.assertTrue(result.target_path.exists())
-            self.assertFalse(list(vault.rglob("*.md")))
+            self.assertEqual(result.status, "待人工处理")
+            self.assertIn("拒绝写入", result.reason)
+            self.assertIsNone(result.target_path)
+            # 项目外的库和项目外的真实库都没有被写
+            self.assertFalse(list(outside.rglob("*.md")))
+            self.assertFalse(list(real_vault.rglob("*.md")))
+            self.assertFalse(list(project_vault.rglob("*.md")))
+            self.assertIn("待人工处理", note.read_text(encoding="utf-8"))
 
     def test_confirm_defaults_to_project_vault_when_key_missing(self) -> None:
         """旧配置没有 mainVaultWritePath 时，默认写项目自有知识库，配置的读取库零写入。"""
         with tempfile.TemporaryDirectory() as tmp:
-            project_root, vault = _make_project(tmp, include_write_key=False)
+            project_root, project_vault, real_vault = _make_project(tmp, include_write_key=False)
             note = _write_note(project_root, "2026-08-20-任务I-复利候选.md", "内容安全。")
 
             result = confirm_pending_note(
@@ -241,19 +257,15 @@ class ReviewFlowTests(unittest.TestCase):
 
             self.assertEqual(result.status, "已确认入库")
             assert result.target_path is not None
-            project_vault = project_root / "dev-vault" / "project-vault"
-            self.assertTrue(
-                project_vault == result.target_path.parent
-                or project_vault in result.target_path.parents
-            )
-            self.assertFalse(list(vault.rglob("*.md")))
+            self.assertIn(project_vault.resolve(), result.target_path.resolve().parents)
+            self.assertFalse(list(real_vault.rglob("*.md")))
 
-    def test_write_vault_env_var_redirects_confirm(self) -> None:
-        """环境变量可以把写入临时重定向到别处，用于安全演练。"""
+    def test_env_redirect_outside_project_is_refused(self) -> None:
+        """环境变量把写入重定向到项目之外时，同样被硬边界拒绝。"""
         with tempfile.TemporaryDirectory() as tmp:
             redirect = Path(tmp) / "redirect"
             redirect.mkdir()
-            project_root, vault = _make_project(tmp)
+            project_root, project_vault, real_vault = _make_project(tmp)
             note = _write_note(project_root, "2026-08-20-任务J-复利候选.md", "内容安全。")
 
             with patch.dict(
@@ -267,11 +279,12 @@ class ReviewFlowTests(unittest.TestCase):
                     now=datetime(2026, 8, 20, 15, 0, 0),
                 )
 
-            self.assertEqual(result.status, "已确认入库")
-            assert result.target_path is not None
-            self.assertTrue(result.target_path.exists())
-            self.assertEqual(redirect.resolve(), result.target_path.resolve().parent)
-            self.assertFalse(list(vault.rglob("*.md")))
+            self.assertEqual(result.status, "待人工处理")
+            self.assertIn("拒绝写入", result.reason)
+            self.assertIsNone(result.target_path)
+            self.assertFalse(list(redirect.rglob("*.md")))
+            self.assertFalse(list(project_vault.rglob("*.md")))
+            self.assertFalse(list(real_vault.rglob("*.md")))
 
 
 if __name__ == "__main__":

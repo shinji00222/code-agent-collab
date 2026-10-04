@@ -8,10 +8,10 @@
 
 - 项目根目录：`C:\Users\lwz12\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手`
 - 当前分支：`main`
-- 当前本地版本：`v0.17.12`
+- 当前本地版本：`v0.17.13`
 - 远端公开基线：`origin/main` / tag `v0.17.6` / commit `168aa6f`
-- 本地状态：提交后预计比远端 ahead 6（v0.17.7 到 v0.17.12），未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
-- 用户要求：继续推进项目，把发现的问题都解决，重点关注安全性、可靠性、权限分级。
+- 本地状态：提交后预计比远端 ahead 8（v0.17.7 到 v0.17.13），未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+- 用户要求：继续推进项目，把发现的问题都解决，重点关注安全性、可靠性、权限分级；**项目要有自己独立的知识库，程序不写到项目之外**。
 
 ## 2. 接手后第一步必须做
 
@@ -23,17 +23,19 @@ git status --short --branch
 git log --oneline -8
 $env:AGENT_WORKBENCH_PROVIDER='mock'
 python scripts/run-tests.py
+python scripts/check-undefined-names.py src tests
 ```
 
 预期：
 
-- 分支应为 `main...origin/main [ahead 6]` 左右。
-- 全量测试应通过，当前基线是 **225 项 OK**；v0.17.12 的 targeted 复验是 `python -m unittest tests.test_adaptive_workflow` → 14 项 OK（注意该模块名只在 `PYTHONPATH` 含 `tests` 时可直接按模块名导入，最稳的是直接跑 `python scripts/run-tests.py`）。
-- 正常接手时，v0.17.11 / v0.17.12 应已经本地提交；如果 `git status` 仍显示未提交，先检查 diff 和测试，再提交。
+- 分支应为 `main...origin/main [ahead 8]` 左右。
+- 全量测试应通过，当前基线是 **243 项 OK**；最稳的跑法是直接 `python scripts/run-tests.py`。
+- `scripts/check-undefined-names.py` 应输出 `OK`（退出码 0）。
+- 正常接手时，v0.17.11 / v0.17.12 / v0.17.13 应已经本地提交；如果 `git status` 仍显示未提交，先检查 diff 和测试，再提交。
 
 ```powershell
 git add -- .
-git commit -m "fix: restore packaged CLI invocation"
+git commit -m "feat: enforce runtime permission boundaries"
 ```
 
 不要 push / tag / release，除非 shin 明确要求。
@@ -51,9 +53,20 @@ git commit -m "fix: restore packaged CLI invocation"
 3. `de4f691 fix: prevent confirm overwrite`（v0.17.9）
 4. `65016be test: cover integrator checkpoint state`（v0.17.10）
 5. `6a8eef5 feat: preserve worker run attempt history`（v0.17.11）
-6. v0.17.12 打包版 `run_cli` 回归修复，提交信息：`fix: restore packaged CLI invocation`
+6. `9a18c65 fix: restore packaged CLI invocation`（v0.17.12）
+7. `acad8f5 chore: add undefined-name static check script`
+8. v0.17.13 权限强制点与写入硬边界，提交信息：`feat: enforce runtime permission boundaries`
 
 ## 4. 已完成的问题闭环
+
+### v0.17.13：N5 权限运行时强制点 + 「项目外一律不写」硬边界
+
+- 问题：`PermissionLevel` 只是标注，运行时零检查；同时 shin 明确要求「项目要有自己独立的知识库，不能写到库之外」。
+- 修复：新增 `src/code_agent_collab/permissions.py`（叶子模块），`PermissionLevel` 从它取值；接入 8 处强制点（`apply.py` 写文件/回滚/跑测试/git 暂存与提交、`coder.py`/`integrator.py` 草稿写入、`knowledge.py` 检索摘录、`review.py` 候选状态与入库写入）。
+- **硬边界**：项目目录之外的写入一律拒绝，与权限级别无关。`confirm` 遇到项目外的 `mainVaultWritePath` 会把候选标成「待人工处理」并写明「拒绝写入」，不创建文件。
+- 改外部代码的正确姿势：`--project-root <目录>` / `AGENT_WORKBENCH_PROJECT_ROOT`，那时那个库就是当前项目。
+- 验证：新增 `tests/test_permissions.py` 18 项 + `tests/test_review.py` 项目外拒绝 2 项；全量 **243 项 OK**；实测对一个项目外演示仓库执行 `start --project-root <仓库>`，上下文包落在 `<仓库>/logs/context-packs/`。
+- 遗留：N30–N35（未接入的 20+ 写入点、可绕过的环境变量、声明与行为不一致的 Agent、MCP 子进程），已记入问题台账。
 
 ### v0.17.12：N29 打包版 `run_cli` 漏导入，任务全跑不了
 
@@ -112,9 +125,10 @@ git commit -m "fix: restore packaged CLI invocation"
    - 当前 Reviewer 打回后可能 Coder + Integrator 都重跑。
    - 理想方向：Reviewer 结论带“问题归属”，按归属决定只重跑 Coder、只重跑 Integrator 或都重跑。
 
-3. N5：权限等级仍偏声明式。
-   - `PermissionLevel` 会写进日志/账本，但运行时强制点还不够系统。
-   - 下一步可以先做“命令/文件写入路径按 permission 做统一 guard”的小闭环，不要一口气重构全权限系统。
+3. N5 权限等级偏声明式 —— **已完成第一版（v0.17.13）**。
+   - 强制点已建立：`src/code_agent_collab/permissions.py`（`check_write` / `check_command` / `ensure_inside_project`）。
+   - 剩余是完成度问题，拆成 N30–N35：未接入的 20+ 写入点（N30，P1）、可绕过边界的环境变量（N31）、声明与行为不一致的 Agent（N32/N33）、MCP 子进程（N34）。
+   - 下一步建议：按 N30 分批接入，优先 `config.py`、`review._mark_status`、`reflection.py`。
 
 4. Web API 安全项。
    - Host / Origin / 请求体大小 / 本地访问边界。
@@ -126,11 +140,13 @@ git commit -m "fix: restore packaged CLI invocation"
 
 - 问题台账：`C:\Users\lwz12\Desktop\多Agent代码协作助手-当前问题整理.md`
 - 项目规则：`AGENTS.md`
-- 技能沉淀：`SKILLS.md`
+- 技能沉淀：`SKILLS.md`（§48 是本轮权限边界的完整说明）
 - 变更记录：`CHANGELOG.md`
 - 版本记录：`VERSIONING.md`
-- 当前 N29 代码：`src/code_agent_collab/web_jobs.py`（frozen 分支）、常量定义在 `src/code_agent_collab/web_project.py`
-- 当前 N29 测试：`tests/test_webui.py`（`RunCliTests`）
+- 权限强制点：`src/code_agent_collab/permissions.py`
+- 权限测试：`tests/test_permissions.py`；入库边界测试在 `tests/test_review.py`
+- N29 代码：`src/code_agent_collab/web_jobs.py`（frozen 分支）、常量定义在 `src/code_agent_collab/web_project.py`
+- N29 测试：`tests/test_webui.py`（`RunCliTests`）
 - 未定义名字自查脚本：`scripts/check-undefined-names.py`（`symtable` 按作用域扫描，`python scripts/check-undefined-names.py src tests`，退出码 1 表示有命中）
 
 ## 7. 安全边界和禁止事项

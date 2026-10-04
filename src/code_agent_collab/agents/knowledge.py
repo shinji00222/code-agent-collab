@@ -5,6 +5,7 @@ from pathlib import Path
 from ..config import load_config
 from ..file_utils import write_text
 from ..knowledge import extract_keywords, render_knowledge_note, search_knowledge
+from ..permissions import check_write
 from .base import AgentContext, AgentResult, BaseAgent, PermissionLevel
 
 
@@ -29,6 +30,15 @@ class KnowledgeAgent(BaseAgent):
             context.project_root / "logs" / "context-packs" / f"{context.task_id}-knowledge.md"
         )
         if hits:
+            # 本 Agent 声明 L0_READ_ONLY，但会写一份检索摘录到 logs/。
+            # logs/ 属于运行时账本区域（不是用户内容），L0 允许写入——这条是刻意的；
+            # 在这里显式声明一次，避免以后被当成"只读 Agent 偷偷写文件"。
+            check_write(
+                self.permission,
+                knowledge_path,
+                context.project_root,
+                action="KnowledgeAgent 写检索摘录",
+            )
             write_text(
                 knowledge_path,
                 render_knowledge_note(context.task_id, context.task_goal, hits),

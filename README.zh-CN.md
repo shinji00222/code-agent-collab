@@ -19,7 +19,7 @@
 
 ## 当前状态
 
-当前版本：`v0.17.12`
+当前版本：`v0.17.13`
 
 当前主线：**Stable Coding Loop -> Hierarchical Context -> Evaluation**。
 
