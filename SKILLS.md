@@ -495,7 +495,7 @@ python -m unittest discover -s tests
 - 怎么验证：`tests/test_webui.py` 的 `RunCliTests` 用替身进程分别覆盖 frozen 与源码两条分支，断言命令列表等于 `[<同目录>/AgentWorkbench-CLI.exe, "provider"]` 和 `[sys.executable, "-m", "code_agent_collab.cli", "pending"]`。改完还要做一次「反向验证」：临时回退修复，确认新测试真的报 `NameError`。
 - 常见坑：
   1. **`py_compile` 和 unittest 都抓不到这类错误**——只有真的走到那一行才炸，而现有打包冒烟只验证"页面 HTTP 200 且包含 `/api/jobs`"，属于间接证据，不能替代真实分支覆盖。
-  2. 拆分模块后要专门找"引用了但没定义/没导入"的全局名字。可用一次性脚本 `work/check-undefined-names.py`（`symtable` 扫描，输出里 `__file__` 属误报）。
+  2. 拆分模块后要专门找"引用了但没定义/没导入"的全局名字。项目自带脚本 `python scripts/check-undefined-names.py src tests`（`symtable` 按作用域扫描，退出码 1 表示有命中）。
   3. 判断"打包版能不能用"不能只看 EXE 存在或窗口能打开，必须让 frozen 分支真正执行一次。
 
 

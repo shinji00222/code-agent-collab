@@ -14,6 +14,11 @@
 - `tests/test_webui.py` 新增两条 `run_cli` 命令构造测试：frozen 模式断言调用同目录 CLI 可执行程序，源码模式断言调用 `-m code_agent_collab.cli`；用替身进程避免真的拉起子进程。
 - 已实测「测试能抓到 bug」：临时回退修复后，新测试报 `NameError: name 'Path' is not defined`；恢复修复后通过。
 
+### 新增维护脚本
+
+- 新增 `scripts/check-undefined-names.py`：用 `symtable` 按作用域扫描「引用了但没定义、也没导入」的全局名字，`python scripts/check-undefined-names.py src tests`，退出码 1 表示有命中。
+- 加它的原因：这类拆分残留 `py_compile` 和 unittest 都抓不到，只有走到那一行才炸。当前 `src` + `tests` 共 71 个文件扫描干净。
+
 ### 边界
 
 - 本次只修命令构造，不改变打包流程和命令白名单。

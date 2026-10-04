@@ -131,7 +131,7 @@ git commit -m "fix: restore packaged CLI invocation"
 - 版本记录：`VERSIONING.md`
 - 当前 N29 代码：`src/code_agent_collab/web_jobs.py`（frozen 分支）、常量定义在 `src/code_agent_collab/web_project.py`
 - 当前 N29 测试：`tests/test_webui.py`（`RunCliTests`）
-- 未定义名字自查脚本：`C:\Users\lwz12\Desktop\AI工作台知识库\work\check-undefined-names.py`（一次性工具，`symtable` 扫描，`__file__` 命中属误报）
+- 未定义名字自查脚本：`scripts/check-undefined-names.py`（`symtable` 按作用域扫描，`python scripts/check-undefined-names.py src tests`，退出码 1 表示有命中）
 
 ## 7. 安全边界和禁止事项
 
