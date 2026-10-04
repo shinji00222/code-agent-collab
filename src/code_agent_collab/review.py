@@ -125,6 +125,8 @@ def _write_to_vault(project_root: Path, content: str, target_dir: Path, source_n
     ensure_dir(target_dir)
     cleaned = _strip_machine_paths(content)
     target = target_dir / source_name
+    if target.exists():
+        raise FileExistsError(f"目标文件已存在，拒绝覆盖：{target}")
     write_text(target, cleaned)
     return target
 
@@ -209,8 +211,19 @@ def confirm_pending_note(project_root: Path, path: Path, now: datetime | None = 
     vault = _write_vault(project_root)
     ai_target = _read_ai_target(content)
     target_dir = _resolve_target(project_root, ai_target)
+    target_path = target_dir / path.name
+    if target_path.exists():
+        relative = target_path.resolve().relative_to(vault.resolve())
+        reason = f"目标文件已存在，拒绝覆盖：{relative}"
+        _mark_status(path, "待人工处理", reason, now)
+        return ReviewResult(
+            path=path,
+            status="待人工处理",
+            reason=reason,
+            target_path=target_path,
+        )
     target_path = _write_to_vault(project_root, content, target_dir, path.name)
-    relative = target_path.relative_to(vault)
+    relative = target_path.resolve().relative_to(vault.resolve())
     _mark_status(path, f"已确认入库：{relative}", f"人工确认，写入 {relative}", now)
     return ReviewResult(
         path=path,

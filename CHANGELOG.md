@@ -1,5 +1,23 @@
 # 更新日志
 
+## v0.17.9 - 2026-10-04（confirm 防覆盖安全修复版）
+
+### 修正：人工确认入库拒绝覆盖已有文件
+
+- `confirm_pending_note()` 在写入知识库前会检查目标文件是否已存在；已存在时标记为“待人工处理”，并提示“拒绝覆盖”。
+- `_write_to_vault()` 增加兜底 `FileExistsError`，防止未来调用方绕过确认流程直接覆盖文件。
+- 同步修正 README / 中文 README / 包版本号。
+
+### 边界
+
+- 这是安全修复版，只改变候选知识入库的写入保护，不改变 AI 审查、敏感扫描、默认写入沙箱和真实主知识库隔离策略。
+- 本轮未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+
+### 测试
+
+- 针对性测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; $env:PYTHONPATH='src'; python -m unittest tests.test_review` → 13 项 OK。
+
+
 ## v0.17.8 - 2026-10-03（返工草稿选择修复版）
 
 ### 修正：apply-draft 优先选择最新返工草稿

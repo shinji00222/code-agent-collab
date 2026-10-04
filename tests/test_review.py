@@ -145,6 +145,31 @@ class ReviewFlowTests(unittest.TestCase):
             self.assertEqual(result.status, "待人工处理")
             self.assertFalse(list(vault.rglob("*.md")))
 
+    def test_confirm_refuses_to_overwrite_existing_vault_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root, vault = _make_project(tmp)
+            note = _write_note(project_root, "2026-08-20-任务K-复利候选.md", "第一次内容。")
+            first = confirm_pending_note(
+                project_root,
+                note,
+                now=datetime(2026, 8, 20, 15, 0, 0),
+            )
+            self.assertEqual(first.status, "已确认入库")
+            assert first.target_path is not None
+            first_content = first.target_path.read_text(encoding="utf-8")
+
+            duplicate = _write_note(project_root, note.name, "第二次内容，不能覆盖。")
+            second = confirm_pending_note(
+                project_root,
+                duplicate,
+                now=datetime(2026, 8, 20, 16, 0, 0),
+            )
+
+            self.assertEqual(second.status, "待人工处理")
+            self.assertIn("拒绝覆盖", second.reason)
+            self.assertEqual(first.target_path.read_text(encoding="utf-8"), first_content)
+            self.assertNotIn("第二次内容", first.target_path.read_text(encoding="utf-8"))
+
     def test_find_pending_path_by_keyword(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root, _ = _make_project(tmp)

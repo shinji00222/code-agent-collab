@@ -462,3 +462,12 @@ python -m unittest discover -s tests
 - 怎么做：`find_draft_path()` 保持 integrated draft 优先；普通 Coder 草稿按文件修改时间和 `-revisionN` 后缀排序，选择最新版本。`_code_blocks()` 落入 `DraftChange` 前调用 `_strip_code_fence()` 清理外层 fenced code。
 - 怎么验证：`tests/test_apply.py::test_find_draft_path_prefers_latest_coder_revision` 先写初稿和 `revision1`，断言 `find_draft_path()` 返回返工稿；`test_parse_strips_markdown_code_fences_from_file_content` 覆盖 fenced code 清理。
 - 常见坑：不要把 exact `<task>-coder-draft.md` 直接提前返回；它通常是第一版，返工稿文件名会带 `-revisionN`。
+
+## 44. confirm 入库防覆盖护栏（v0.17.9）
+
+- 做什么：人工确认候选记录入库时，目标文件已存在就拒绝写入，避免重复确认或同名候选覆盖已有知识文件。
+- 为什么：`confirm` 是少数会把项目候选写进知识库的路径；即使默认写入沙箱，也不能让重复确认静默覆盖内容。
+- 怎么做：`confirm_pending_note()` 在 `_write_to_vault()` 前检查 `target_dir / path.name`；存在时标记候选为“待人工处理”，原因写“目标文件已存在，拒绝覆盖”。`_write_to_vault()` 自身也保留 `FileExistsError` 兜底。
+- 怎么验证：`tests.test_review` 新增重复确认用例，第一次写入成功，第二次同名候选被拒绝，目标文件内容保持第一次写入内容。
+- 常见坑：不要为了“方便重复确认”自动改名；自动改名会制造重复知识。遇到拒绝覆盖，应由人决定合并、改名还是废弃。
+
