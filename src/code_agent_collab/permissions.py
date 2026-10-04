@@ -40,6 +40,7 @@
 
 from __future__ import annotations
 
+import os
 from enum import Enum
 from pathlib import Path
 
@@ -101,12 +102,20 @@ def allows(granted: object, required: object) -> bool:
     return level_rank(granted) >= level_rank(required)
 
 
-def _resolve(path: object) -> Path:
-    candidate = Path(str(path))
-    try:
-        return candidate.resolve()
-    except OSError:  # pragma: no cover - 路径异常时退回绝对路径
-        return candidate.absolute()
+def _absolute(path: object) -> Path:
+    """纯字符串归一化的绝对路径：不访问文件系统、不解析符号链接。
+
+    用 `os.path.abspath` 而不是 `Path.absolute()`——前者会折叠 `..`，
+    这样 `..` 穿越才会被判成「项目外」。
+    """
+    return Path(os.path.abspath(str(path)))
+
+
+def _nearest_existing(path: Path) -> Path | None:
+    for candidate in (path, *path.parents):
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _is_within(target: Path, root: Path) -> bool:
@@ -117,19 +126,43 @@ def _is_within(target: Path, root: Path) -> bool:
     return True
 
 
+def _escapes_via_link(target: Path, root: Path) -> bool:
+    """目标的「最近存在祖先」解析后是否越出项目（防符号链接 / junction 逃逸）。
+
+    **为什么只解析存在的祖先**：早先的实现直接对整条路径（含尚不存在的叶子）调
+    `resolve()`，在 Windows 上这种解析结果会随「中间目录此刻是否已创建」而变——
+    并行 worker 刚建好草稿目录时，同一个路径会一时被判成「项目外」，造成偶发误判
+    （已在整包测试中复现：报「不在项目内」，但同一时刻 `relative_to` 实际成功）。
+    只解析已存在的祖先既能稳定判断，又能挡住「项目内的软链接指向项目外」。
+    """
+    ancestor = _nearest_existing(target)
+    if ancestor is None:
+        return False
+    try:
+        resolved_ancestor = ancestor.resolve()
+        resolved_root = root.resolve()
+    except OSError:
+        return False
+    return not _is_within(resolved_ancestor, resolved_root)
+
+
 def classify_path(path: object, project_root: object) -> WriteZone:
     """按落点判断写入区域。路径不存在也可以判断（不做存在性检查）。"""
-    target = _resolve(path)
-    root = _resolve(project_root)
+    root = _absolute(project_root)
+    target = _absolute(path)
 
-    if _is_within(target, root):
-        relative = target.relative_to(root)
-        top = relative.parts[0] if relative.parts else ""
-        if top in RUNTIME_TOP_DIRS:
-            return WriteZone.RUNTIME
-        if top in DRAFT_TOP_DIRS:
-            return WriteZone.DRAFT
-        return WriteZone.PROJECT_SOURCE
+    if not _is_within(target, root):
+        return WriteZone.OUTSIDE
+    if _escapes_via_link(target, root):
+        return WriteZone.OUTSIDE
+
+    relative = target.relative_to(root)
+    top = relative.parts[0] if relative.parts else ""
+    if top in RUNTIME_TOP_DIRS:
+        return WriteZone.RUNTIME
+    if top in DRAFT_TOP_DIRS:
+        return WriteZone.DRAFT
+    return WriteZone.PROJECT_SOURCE
 
     return WriteZone.OUTSIDE
 
@@ -173,8 +206,9 @@ def ensure_inside_project(path: object, project_root: object, *, action: str) ->
     用于「把一批路径交给外部命令处理」的场景，例如 `git add -- <paths>`：
     这类操作不写文件，但可以被指向项目之外，所以单独做一个原语。
     """
-    target = _resolve(path)
-    if _is_within(target, _resolve(project_root)):
+    target = _absolute(path)
+    root = _absolute(project_root)
+    if _is_within(target, root) and not _escapes_via_link(target, root):
         return target
     raise PermissionDenied(f"权限不足：{action} 的路径必须落在项目内，实际为 {path}")
 
@@ -198,7 +232,11 @@ def check_command(
         )
     if cwd is None or project_root is None:
         return
-    if _is_within(_resolve(cwd), _resolve(project_root)):
+    resolved_cwd = _absolute(cwd)
+    resolved_root = _absolute(project_root)
+    if _is_within(resolved_cwd, resolved_root) and not _escapes_via_link(
+        resolved_cwd, resolved_root
+    ):
         return
     raise PermissionDenied(
         f"权限不足：{action} 的工作目录必须落在项目内，"

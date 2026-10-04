@@ -922,8 +922,8 @@ def _run_reviewer_fix_loop(
                 goal=goal,
                 detail=f"Fix Loop 有 worker 失败，已保存断点：{exc}",
                 plan=plan,
-                done=done_roles,
-                failed=exc.failed_roles,
+                done_roles=done_roles,
+                failed_roles=exc.failed_roles,
             )
             raise RuntimeError(f"Fix Loop 有 worker 失败：{exc}") from exc
         _extend_unique_results(results, rewrite_results)
@@ -1096,8 +1096,8 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
                 goal=goal,
                 detail=f"阶段 {stage_index + 1} 有 worker 失败，已保存断点：{exc}",
                 plan=plan,
-                done=done_roles,
-                failed=exc.failed_roles,
+                done_roles=done_roles,
+                failed_roles=exc.failed_roles,
             )
             raise RuntimeError(f"阶段 {stage_index + 1} 有 worker 失败：{exc}") from exc
         _extend_unique_results(results, stage_results)

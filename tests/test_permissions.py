@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -87,6 +88,53 @@ class ClassifyPathTests(unittest.TestCase):
 
     def test_project_root_itself_is_inside(self) -> None:
         self.assertEqual(classify_path(self.root, self.root), WriteZone.PROJECT_SOURCE)
+
+    def test_missing_intermediate_dirs_are_still_inside(self) -> None:
+        """叶子和中间目录都不存在时，仍必须判成项目内。
+
+        回归用例：早先的实现直接对整条路径调 `resolve()`。在 Windows 上这种解析结果
+        会随「中间目录此刻是否已创建」而变——并行 worker 刚建出草稿目录时，同一个
+        路径会一时被判成「项目外」，造成整包测试偶发失败（已复现：报「不在项目内」，
+        但同一时刻 `relative_to` 实际成功）。
+        """
+        target = self.root / "dev-vault" / "projects" / "还没建的目录" / "draft.md"
+        self.assertFalse(target.parent.exists())
+        self.assertEqual(classify_path(target, self.root), WriteZone.DRAFT)
+
+        source = self.root / "src" / "还没建的包" / "app.py"
+        self.assertFalse(source.parent.exists())
+        self.assertEqual(classify_path(source, self.root), WriteZone.PROJECT_SOURCE)
+
+    def test_parent_traversal_out_of_project_is_outside(self) -> None:
+        """`..` 穿越必须被判成项目外（`abspath` 会折叠 `..`，`Path.absolute()` 不会）。"""
+        self.assertEqual(
+            classify_path(self.root / ".." / "outside" / "x.md", self.root),
+            WriteZone.OUTSIDE,
+        )
+
+    def test_symlink_escaping_project_is_outside(self) -> None:
+        """项目内的软链接指向项目外时，写入必须被拒绝。"""
+        outside = Path(self._tmp.name) / "outside-dir"
+        outside.mkdir()
+        link = self.root / "escape"
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            # Windows 上普通用户建不了符号链接，但目录联接（junction）不需要管理员权限
+            created = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(link), str(outside)],
+                capture_output=True,
+                text=True,
+            )
+            if created.returncode != 0:
+                self.skipTest(
+                    "当前环境既建不了软链接也建不了目录联接："
+                    f"{created.stdout.strip()} {created.stderr.strip()}"
+                )
+
+        self.assertEqual(classify_path(link / "x.md", self.root), WriteZone.OUTSIDE)
+        with self.assertRaises(PermissionDenied):
+            check_write(PROJECT_WRITE, link / "x.md", self.root, action="经软链接写外部")
 
 
 class CheckWriteTests(unittest.TestCase):
