@@ -10,10 +10,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .control import request_pause
 from .web_discussion import build_discussion_goal, clear_discussion, discuss_with_orchestrator
 from .web_jobs import (
+    JobQueueFull,
     _kill_process_tree,
     build_command,
     force_stop_active_work,
     get_command_job,
+    initialise_job_history,
+    list_command_jobs,
     run_cli,
     start_command_job,
 )
@@ -76,6 +79,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/discussion":
             self._send_json(200, {"goal": build_discussion_goal()})
+            return
+        if self.path == "/api/jobs":
+            self._send_json(200, {"jobs": list_command_jobs()})
             return
         if self.path.startswith("/api/jobs/"):
             job_id = self.path.rsplit("/", 1)[-1]
@@ -142,11 +148,17 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/jobs":
             try:
                 command = str(body.get("command", "")).strip()
-                self._send_json(202, start_command_job(command))
+                request_id = str(body.get("request_id", "")).strip()
+                job = start_command_job(command, request_id=request_id)
+            except JobQueueFull as exc:
+                self._send_json(429, {"error": str(exc)})
             except ValueError as exc:
                 self._send_json(400, {"error": str(exc)})
             except Exception as exc:  # noqa: BLE001
                 self._send_json(500, {"error": f"服务器错误：{exc}"})
+            else:
+                # 重复提交直接返回已有任务：用 200 区分「这次真的新建了」
+                self._send_json(200 if job.get("deduplicated") else 202, job)
             return
 
         if self.path != "/api/command":
@@ -173,9 +185,13 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--no-browser", action="store_true", help="启动后不自动打开浏览器")
     args = parser.parse_args()
+    # 启动时先把上次遗留的未完成任务标成「中断」，避免看起来还在跑
+    recovered = initialise_job_history()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     url = f"http://127.0.0.1:{args.port}"
     print(f"Web UI: {url}  (Ctrl+C to stop)")
+    if recovered:
+        print(f"已将 {len(recovered)} 个上次未完成的任务标记为中断（不会自动重跑）。")
     if not args.no_browser:
         # 等服务器就绪后再打开浏览器（打包成软件后双击即用）
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()

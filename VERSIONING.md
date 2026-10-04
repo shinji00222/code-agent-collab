@@ -180,6 +180,7 @@
 - v0.17.12：打包版 CLI 调用回归修复版；`web_jobs.run_cli()` 补回拆分时漏掉的 `Path` 与 `CLI_EXE_NAME`，并用 frozen 模式测试钉住，避免打包版一提交任务就 `NameError`。
 - v0.17.13：权限强制点与写入硬边界版；新增 `permissions.py` 把 `PermissionLevel` 变成运行时检查（N5），并定下「只写当前项目目录内、项目外一律拒绝」的硬边界。**行为变更**：把知识库写入目标配置到项目之外时 `confirm` 会被拒绝，不再写入。
 - v0.17.14：本机 Web API 请求加固版；新增 `web_security.py`，对所有 API 请求做 Host / Origin / Sec-Fetch-Site / Content-Type 校验，请求体上限 64 KiB，响应加安全头。页面 `/api/pause` 同步改带 JSON Content-Type。
+- v0.17.15：后台任务并发/去重/持久化版 + 两处可靠性修复；job 加并发上限（2）与等待队列上限（8，满了 429）、写命令串行、重复提交去重、记录落盘 `logs/jobs/` 且重启标记中断不重跑；同时修掉权限边界的路径判定偶发误判与 worker 失败上报的 `TypeError`。
 - 全局 / repo / module / task / agent 私有记忆分层；
 - 短期 / 长期 memory 区分；
 - context selection 策略；
@@ -241,4 +242,5 @@
 - 2026-10-04：`v0.17.12` 用于打包版 `run_cli` 回归修复（漏导入 `Path` / `CLI_EXE_NAME`）；这是修复版，当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。**注意：下一次重新打 Windows 包之前必须先包含本修复，否则打包版一提交任务就报 `NameError`。**
 - 2026-10-04：`v0.17.13` 用于运行时权限强制点与「项目外一律不写」硬边界；这是安全加固版，含明确的行为变更（外部知识库写入被拒绝）。当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
 - 2026-10-04：`v0.17.14` 用于本机 Web API 请求加固（Host / Origin / Content-Type / 请求体上限）；这是安全加固版，当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
+- 2026-10-04：`v0.17.15` 用于后台任务并发/去重/持久化，并修掉权限路径判定偶发误判与 worker 失败上报 `TypeError`；当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
 - 不要只看本地版本号判断发布状态；要同时看 `git status --short --branch`、`git rev-parse HEAD` 和 `git ls-remote origin refs/heads/main`。

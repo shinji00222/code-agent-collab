@@ -11,6 +11,7 @@ from urllib.request import urlopen
 import webview
 
 from .webui import Handler
+from .web_jobs import initialise_job_history
 
 APP_TITLE = "多Agent工作台"
 DEFAULT_PORT = 8765
@@ -34,6 +35,8 @@ def _create_server(port: int) -> ThreadingHTTPServer:
 
 
 def start_local_server(port: int | None = None) -> tuple[ThreadingHTTPServer, str]:
+    # 启动时先把上次遗留的未完成任务标成「中断」（只改状态，绝不重跑）
+    initialise_job_history()
     if port:
         selected_port = port
         server = _create_server(selected_port)

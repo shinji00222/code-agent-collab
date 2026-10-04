@@ -1,3 +1,3 @@
 """Local-first multi-agent coding workbench prototype."""
 
-__version__ = "0.17.14"
+__version__ = "0.17.15"

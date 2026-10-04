@@ -8,9 +8,9 @@
 
 - 项目根目录：`C:\Users\lwz12\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手`
 - 当前分支：`main`
-- 当前本地版本：`v0.17.14`
+- 当前本地版本：`v0.17.15`
 - 远端公开基线：`origin/main` / tag `v0.17.6` / commit `168aa6f`
-- 本地状态：提交后预计比远端 ahead 9（v0.17.7 到 v0.17.14），未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+- 本地状态：提交后预计比远端 ahead 10（v0.17.7 到 v0.17.15），未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
 - 用户要求：继续推进项目，把发现的问题都解决，重点关注安全性、可靠性、权限分级；**项目要有自己独立的知识库，程序不写到项目之外**。
 
 ## 2. 接手后第一步必须做
@@ -28,14 +28,14 @@ python scripts/check-undefined-names.py src tests
 
 预期：
 
-- 分支应为 `main...origin/main [ahead 9]` 左右。
-- 全量测试应通过，当前基线是 **269 项 OK**；最稳的跑法是直接 `python scripts/run-tests.py`。
+- 分支应为 `main...origin/main [ahead 10]` 左右。
+- 全量测试应通过，当前基线是 **291 项 OK**；最稳的跑法是直接 `python scripts/run-tests.py`。
 - `scripts/check-undefined-names.py` 应输出 `OK`（退出码 0）。
-- 正常接手时，v0.17.11 / v0.17.12 / v0.17.13 / v0.17.14 应已经本地提交；如果 `git status` 仍显示未提交，先检查 diff 和测试，再提交。
+- 正常接手时，v0.17.11 ~ v0.17.15 应已经本地提交；如果 `git status` 仍显示未提交，先检查 diff 和测试，再提交。
 
 ```powershell
 git add -- .
-git commit -m "feat: enforce runtime permission boundaries"
+git commit -m "feat: queue and persist web jobs"
 ```
 
 不要 push / tag / release，除非 shin 明确要求。
@@ -57,8 +57,19 @@ git commit -m "feat: enforce runtime permission boundaries"
 7. `acad8f5 chore: add undefined-name static check script`
 8. v0.17.13 权限强制点与写入硬边界，提交信息：`feat: enforce runtime permission boundaries`
 9. v0.17.14 本机 Web API 请求加固，提交信息：`feat: harden local web api requests`
+10. v0.17.15 后台任务队列/去重/持久化 + 两处可靠性修复，提交信息：`feat: queue and persist web jobs`
 
 ## 4. 已完成的问题闭环
+
+### v0.17.15：后台任务队列（台账「安全方案 · 问题 3」第一版）+ 两处可靠性修复
+
+- 问题：每个任务直接起线程，没有队列容量、没有去重，job 只存内存 —— 双击按钮就重复起任务（重复花额度）、多任务抢同一批文件、重启历史全丢、也不知道上次是否有任务被中断。
+- 修复：`web_jobs.py` 里新增 `_JobScheduler`（一个调度线程 + 每任务一个工作线程）：并发上限 `MAX_ACTIVE_JOBS=2`、等待队列上限 `MAX_QUEUED_JOBS=8`（满了 **429**）、写命令（除 `pending/plans/provider/help`）**同时最多 1 个**、同 `request_id` 或同一条排队/运行中的命令**去重不重复执行**；新增 `job_store.py` 落盘 `logs/jobs/<job_id>.json`（原子写、保留 200 条），启动与退出时把未完成记录标成 `interrupted`（**只改状态、绝不重跑**）；新增 `GET /api/jobs` 查历史。
+- **顺带修掉两个真 bug**：
+  1. 权限边界的路径判定在 Windows 上偶发误判（报「在项目外」但两个路径前缀完全一致）。改用 `os.path.abspath` 做字符串归一化 + 只对**最近存在祖先**做 `resolve()` 防软链接逃逸。整包连跑 6 轮 0 失败（修复前 5 轮失败 2 次）。
+  2. `_publish_execution_failure()` 形参是 `done_roles/failed_roles`，两处调用点却传 `done=/failed=` → **任何 worker 失败都会再抛 `TypeError`，把真实原因盖掉**。已修。
+- 验证：新增 `tests/test_job_queue.py` 19 项 + `tests/test_permissions.py` 3 项（含用 `mklink /J` 真建目录联接验证越界拦截，不跳过）；全量 **291 项 OK**。
+- 遗留：N37 —— **跨进程写锁仍缺**（串行只在单进程内生效）。
 
 ### v0.17.14：本机 Web API 请求加固（台账「安全方案 · 问题 2」第一版）
 
@@ -142,18 +153,22 @@ git commit -m "feat: enforce runtime permission boundaries"
 4. Web API 安全项 —— **请求级加固已完成第一版（v0.17.14）**。
    - 已有：Host / Origin / Sec-Fetch-Site / Content-Type 校验、请求体 64 KiB 上限、安全响应头、请求超时。
    - 剩余 N36：没有会话令牌，Origin 不校验端口。**要把端口对外开放（哪怕只是局域网）必须先补令牌。**
-   - 下一项是本批的 B3：任务重复提交、无限并发与 job 记录丢失（台账「安全方案 · 问题 3」），相关代码 `web_jobs.py` 的 `start_command_job` / `_JOBS`。
 
-5. 其他：N10/N14/N15/N16/N17/N18/N6/N7/N8。
+5. 后台任务与并发 —— **已完成第一版（v0.17.15）**。
+   - 已有：并发上限 2、等待队列上限 8（满了 429）、写命令串行、重复提交去重、记录落盘 `logs/jobs/`、重启标记中断不重跑、`GET /api/jobs` 历史。
+   - 剩余 N37：**跨进程写锁仍缺**（当前串行只在单个服务进程内）。网页版 + 终端同时跑同一项目仍可能互相踩。
+
+6. 其他：N10/N14/N15/N16/N17/N18/N6/N7/N8；以及 N30–N35（权限边界未覆盖面）。
 
 ## 6. 重要文件
 
 - 问题台账：`C:\Users\lwz12\Desktop\多Agent代码协作助手-当前问题整理.md`
 - 项目规则：`AGENTS.md`
-- 技能沉淀：`SKILLS.md`（§48 权限边界、§49 Web API 加固）
+- 技能沉淀：`SKILLS.md`（§48 权限边界、§49 Web API 加固、§50 后台任务队列、§51 路径包含判定的坑）
 - 变更记录：`CHANGELOG.md`
 - 版本记录：`VERSIONING.md`
 - 权限强制点：`src/code_agent_collab/permissions.py`
+- 后台任务调度：`src/code_agent_collab/web_jobs.py`；持久化：`src/code_agent_collab/job_store.py`；测试 `tests/test_job_queue.py`
 - 权限测试：`tests/test_permissions.py`；入库边界测试在 `tests/test_review.py`
 - Web 请求防线：`src/code_agent_collab/web_security.py`；测试 `tests/test_web_security.py`（含起真实服务器的集成用例）
 - N29 代码：`src/code_agent_collab/web_jobs.py`（frozen 分支）、常量定义在 `src/code_agent_collab/web_project.py`

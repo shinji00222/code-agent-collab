@@ -258,7 +258,7 @@ class WebApiIntegrationTests(unittest.TestCase):
                 payload={"command": "help"},
             )
         self.assertEqual(status, 202)
-        start.assert_called_once_with("help")
+        start.assert_called_once_with("help", request_id="")
         self.assertIn(b"stub", body)
 
     def test_force_stop_still_requires_confirmation_word(self) -> None:
