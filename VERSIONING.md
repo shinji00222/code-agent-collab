@@ -242,5 +242,6 @@
 - 2026-10-04：`v0.17.12` 用于打包版 `run_cli` 回归修复（漏导入 `Path` / `CLI_EXE_NAME`）；这是修复版，当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。**注意：下一次重新打 Windows 包之前必须先包含本修复，否则打包版一提交任务就报 `NameError`。**
 - 2026-10-04：`v0.17.13` 用于运行时权限强制点与「项目外一律不写」硬边界；这是安全加固版，含明确的行为变更（外部知识库写入被拒绝）。当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
 - 2026-10-04：`v0.17.14` 用于本机 Web API 请求加固（Host / Origin / Content-Type / 请求体上限）；这是安全加固版，当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
-- 2026-10-04：`v0.17.15` 用于后台任务并发/去重/持久化，并修掉权限路径判定偶发误判与 worker 失败上报 `TypeError`；当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
+- 2026-10-04：`v0.17.15` 用于后台任务并发/去重/持久化，并修掉权限路径判定偶发误判与 worker 失败上报 `TypeError`。
+- **2026-10-04 发布动作**：`v0.17.15` 已 push 到 `origin/main`（远端 main = `af5ba0f`），并推送附注 tag `v0.17.15`（tag 指向 `af5ba0f`）。本次一次性推送 v0.17.7 ~ v0.17.15 共 13 个提交；**v0.17.7 ~ v0.17.14 这 8 个中间版本没有单独打 tag**，只有 `v0.17.6` 与 `v0.17.15` 两个 tag 在远端。推送前已完成安全与隐私扫描。仍未发 GitHub Release、未重新打 Windows 包。**注意：下一次重新打 Windows 包之前必须先包含 `9a18c65`（N29 打包版回归修复）。**
 - 不要只看本地版本号判断发布状态；要同时看 `git status --short --branch`、`git rev-parse HEAD` 和 `git ls-remote origin refs/heads/main`。
