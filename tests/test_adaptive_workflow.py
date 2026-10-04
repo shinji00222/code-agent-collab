@@ -17,9 +17,11 @@ from code_agent_collab.agents.orchestrator import WorkerSpec
 from code_agent_collab.orchestration import (
     WorkerContractConflict,
     WorkerStageFailed,
+    _load_execution_state,
     _plan_from_json,
     _plan_to_json,
     _run_workers,
+    _save_execution_checkpoint,
     create_adaptive_plan,
     execute_adaptive_plan,
     list_adaptive_plans,
@@ -250,6 +252,38 @@ class ApprovalGateTests(unittest.TestCase):
             self.assertIn("CoderAgent", roles)
             self.assertIn("ReviewerAgent", roles)
             self.assertIsNone(load_checkpoint(root, plan_result.task_id))
+
+    def test_checkpoint_round_trips_latest_integrator_specs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            task_id = "task-with-integrator"
+            orchestrator_result = AgentResult(
+                role="OrchestratorAgent",
+                permission=PermissionLevel.READ_ONLY,
+                summary="方案已生成",
+            )
+            coder_specs = (WorkerSpec("CoderAgent", label="实现", owned_paths=("src/",)),)
+            integrator_specs = (WorkerSpec("IntegratorAgent", label="合并"),)
+
+            _save_execution_checkpoint(
+                root,
+                task_id=task_id,
+                next_stage_index=3,
+                done_roles={"CoderAgent", "IntegratorAgent"},
+                results=[orchestrator_result],
+                latest_coder_specs=coder_specs,
+                latest_integrator_specs=integrator_specs,
+            )
+
+            checkpoint = load_checkpoint(root, task_id)
+            self.assertIsNotNone(checkpoint)
+            assert checkpoint is not None
+            self.assertEqual(checkpoint["latest_integrator_specs"][0]["role"], "IntegratorAgent")
+
+            state = _load_execution_state(root, task_id, orchestrator_result)
+
+            self.assertEqual(state.latest_coder_specs, coder_specs)
+            self.assertEqual(state.latest_integrator_specs, integrator_specs)
 
     def test_list_adaptive_plans_shows_approval_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

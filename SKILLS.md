@@ -471,3 +471,11 @@ python -m unittest discover -s tests
 - 怎么验证：`tests.test_review` 新增重复确认用例，第一次写入成功，第二次同名候选被拒绝，目标文件内容保持第一次写入内容。
 - 常见坑：不要为了“方便重复确认”自动改名；自动改名会制造重复知识。遇到拒绝覆盖，应由人决定合并、改名还是废弃。
 
+## 45. checkpoint 保存 Integrator 状态（v0.17.10）
+
+- 做什么：暂停断点必须同时保存 `latest_coder_specs` 和 `latest_integrator_specs`，恢复后 Fix Loop 才知道是否需要重跑 Integrator。
+- 为什么：复杂任务里 Integrator 位于 Coder 和 Reviewer 之间；如果断点漏掉 Integrator specs，恢复后 Reviewer 打回时可能只重跑 Coder，不重合并。
+- 怎么做：统一通过 `_save_execution_checkpoint()` 保存断点，字段进入 `save_checkpoint(... latest_integrator_specs=...)`；恢复时 `_load_execution_state()` 从 checkpoint 读回 `latest_integrator_specs`。
+- 怎么验证：`tests.test_adaptive_workflow::test_checkpoint_round_trips_latest_integrator_specs` 构造含 Integrator 的断点，断言落盘 JSON 和恢复状态都保留 `IntegratorAgent` spec。
+- 常见坑：不要只测“能暂停/能恢复”；那只能证明有 checkpoint 文件，不能证明返工所需的 coder/integrator specs 没丢。
+

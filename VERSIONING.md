@@ -175,6 +175,7 @@
 - v0.17.7：暂停状态修复版；单项目工作台的 CLI 工作命令启动时清理旧 `pause.json`，避免下一次任务被上一次软暂停残留卡住。
 - v0.17.8：返工草稿选择修复版；`apply-draft` 优先使用最新 `-revisionN` 返工稿，并剥掉单文件代码围栏，避免应用旧初稿或写入 Markdown fenced code。
 - v0.17.9：confirm 防覆盖安全修复版；人工确认候选入库前检查目标文件是否已存在，拒绝覆盖已有知识文件。
+- v0.17.10：checkpoint integrator 状态回归版；补测试确认暂停断点会保留 `latest_integrator_specs`，防止恢复后丢失 Integrator 重跑依据。
 - 全局 / repo / module / task / agent 私有记忆分层；
 - 短期 / 长期 memory 区分；
 - context selection 策略；
@@ -231,4 +232,5 @@
 - 2026-10-03：`v0.17.7` 用于 N11 暂停状态修复；这是修复版，当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
 - 2026-10-03：`v0.17.8` 用于 apply-draft 最新返工草稿选择与 fenced code 清理修复；当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
 - 2026-10-04：`v0.17.9` 用于 confirm 防覆盖安全修复；当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
+- 2026-10-04：`v0.17.10` 用于 checkpoint integrator 状态回归验证；当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
 - 不要只看本地版本号判断发布状态；要同时看 `git status --short --branch`、`git rev-parse HEAD` 和 `git ls-remote origin refs/heads/main`。

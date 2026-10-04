@@ -1,5 +1,22 @@
 # 更新日志
 
+## v0.17.10 - 2026-10-04（checkpoint integrator 状态回归版）
+
+### 验证：checkpoint 保留 Integrator 返工状态
+
+- 新增回归测试，直接验证 `_save_execution_checkpoint()` / `_load_execution_state()` 会 round-trip `latest_integrator_specs`。
+- N4 由“怀疑漏字段”校准为已修复并有测试钉住；后续恢复断点时不会因为字段丢失而跳过 Integrator 重跑依据。
+
+### 边界
+
+- 这是可靠性验证版，主要补测试与台账，不改变当前 checkpoint 数据格式。
+- 本轮未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+
+### 测试
+
+- 针对性测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; $env:PYTHONPATH='src'; python -m unittest tests.test_adaptive_workflow` → 14 项 OK。
+
+
 ## v0.17.9 - 2026-10-04（confirm 防覆盖安全修复版）
 
 ### 修正：人工确认入库拒绝覆盖已有文件
