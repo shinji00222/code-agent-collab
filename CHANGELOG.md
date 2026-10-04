@@ -1,5 +1,41 @@
 # 更新日志
 
+## v0.17.14 - 2026-10-04（本机 Web API 请求加固版）
+
+### 新增：Web API 请求级安全校验（台账「安全方案 · 问题 2」）
+
+新增 `src/code_agent_collab/web_security.py`，对所有本机 API 请求做统一校验：
+
+- **Host 校验**：只接受 `127.0.0.1` / `localhost` / `[::1]`。这条挡的是 **DNS rebinding**——攻击者把自己的域名解析到 `127.0.0.1` 时，浏览器发的 `Host` 是攻击者域名，会被拒绝。
+- **来源校验**：有 `Origin` / `Referer` 时必须是回环地址；`Sec-Fetch-Site: cross-site` 直接拒绝。
+- **Content-Type 校验**：写接口只接受 `application/json`。跨站表单只能发 `text/plain` / `urlencoded` / `multipart`，正好被挡住；而要带 JSON Content-Type 的跨站请求会先触发 CORS 预检，本服务不返回 CORS 头 → 预检失败。
+- **请求体上限**：`Content-Length` 超过 64 KiB 直接返回 413，且在**读取之前**就拒绝，不会先分配内存。
+- **其它**：所有响应加 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Cache-Control: no-store`；请求处理超时 30 秒，避免慢连接占住工作线程。
+
+### 修正：页面 `/api/pause` 请求改带 JSON Content-Type
+
+- 加固后写接口要求 JSON Content-Type，而页面上暂停按钮原来的 `fetch("/api/pause", {method:"POST"})` **没带**这个头，会被自己的防线拦掉。已改为带 `Content-Type: application/json` 和空对象请求体。
+- 这是必须一起改的：先加防线再改调用方，否则界面会「暂停按钮失灵」。
+
+### 新增测试
+
+- 新增 `tests/test_web_security.py`（26 项）：纯函数用例（Host / Origin / Sec-Fetch-Site / Content-Type / 请求体上限与解析）+ **起真实本机服务的集成用例**。
+- 集成用例覆盖：正常 GET 返回页面且带安全头；假 Host → 403；跨站 Origin POST → 403 **且确认业务函数没有被调用**（证明拦截发生在副作用之前）；`Sec-Fetch-Site: cross-site` → 403；表单型 Content-Type → 415；超大 `Content-Length` → 413；同源正常 POST → 202；`/api/pause` 走通；`/api/force-stop` 仍要求确认词 `STOP`。
+
+### 实测（真实服务端到端）
+
+用 `webview_app.start_local_server()` 起真实服务后实测：`GET /` → 200 且带 `X-Content-Type-Options: nosniff`；`GET /api/progress` → 200；同源 `POST /api/pause` → 200；跨站 `POST /api/jobs` → 403；表单型 `POST /api/jobs` → 415；`Host: evil.com` 的 `GET /` → 403。冒烟产生的 `logs/control/pause.json` 已清理，未留残留。
+
+### 边界（明确声明，不含糊）
+
+- Origin 只校验主机名是回环地址，**不校验端口**；没有加会话令牌。这层挡的是「任意外部网站」和「DNS rebinding」，不是「同机同权限的其它进程」。
+- **如果以后要把端口对外开放，必须重新评估并加会话令牌**，不能延用现在这层。
+
+### 测试
+
+- 全量测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; python scripts/run-tests.py` → **269 项 OK**（原 243 + 新增 26）。
+
+
 ## v0.17.13 - 2026-10-04（权限运行时强制点 + 项目外写入硬边界版）
 
 ### 新增：运行时权限强制点（台账 N5）

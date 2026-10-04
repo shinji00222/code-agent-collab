@@ -514,4 +514,22 @@ python -m unittest discover -s tests
   3. **别把「改外部代码」和「外部写入」混为一谈**。要改另一个代码库，正确做法是把项目根指过去（`--project-root` / `AGENT_WORKBENCH_PROJECT_ROOT`），那个库就成了当前项目，边界依然成立；不要再开一个「外部可写目录」的口子。
   4. `permissions.py` 必须保持叶子模块：`agents/base.py` 反向引用它，一旦它去 import `agents` 或 `apply`，就会出现「包初始化到一半」的循环导入。级别用字符串值比较，传枚举或传字符串都可以。
 
+## 49. 本机 Web API 的请求级加固（v0.17.14）
+
+- 做什么：给绑定在 `127.0.0.1` 的 Web API 加请求级防线——Host 校验、来源校验、Content-Type 校验、请求体上限、响应安全头、请求处理超时。
+- 为什么：绑回环**不等于**安全。真正的威胁是两个：① **DNS rebinding**——恶意网页把自己的域名解析到 `127.0.0.1`，浏览器就把请求打到本机服务，而且浏览器认为是同源、响应可读；② **跨站触发**——用户访问的任意网页都能 `fetch('http://127.0.0.1:<port>/api/jobs', ...)`，响应被 CORS 挡住没关系，**副作用已经发生**（起任务、花 API 钱、写文件）。另外原来 `int(Content-Length)` 后直接 `read()`，超大值会吃内存。
+- 怎么做（`src/code_agent_collab/web_security.py`）：
+  - `check_host()`：Host 主机名必须是 `127.0.0.1` / `localhost` / `[::1]`。rebinding 场景下浏览器发的 Host 是攻击者域名 → 403。
+  - `check_origin()`：有 `Origin`/`Referer` 时必须是回环地址；`check_fetch_metadata()` 拒绝 `Sec-Fetch-Site: cross-site`。
+  - `check_content_type()`：写接口只接受 `application/json`。跨站表单只能发 `text/plain`/`urlencoded`/`multipart`；而要带 JSON Content-Type 的跨站请求会先触发 CORS 预检，本服务不返回 CORS 头 → 预检失败。这是挡 CSRF 的关键一环。
+  - `read_json_body()`：先看 `Content-Length` 再读，超过 64 KiB 直接 413；非对象 JSON、长度不一致都拒绝。
+  - `inspect_request()` 把所有判断收成一个纯函数，便于单测；`webui.Handler` 只在 `do_GET` / `do_POST` 开头各调一次。
+- 怎么验证：`tests/test_web_security.py` 26 项 = 纯函数用例 + **起真实本机服务**的集成用例。关键断言是「跨站 POST → 403 **且业务函数没有被调用**」（证明拦截发生在副作用之前），以及超大 `Content-Length` 只发头部就返回 413。另用 `webview_app.start_local_server()` 起真实服务做过一次端到端冒烟。
+- 常见坑：
+  1. **加防线之前先查调用方**：加固后写接口要求 JSON Content-Type，而页面上 `/api/pause` 的 `fetch(..., {method:"POST"})` 本来没带这个头——只加防线不改页面，就会出现「暂停按钮失灵」。**先 grep 页面所有 `fetch(`，确认每个写请求都带对了头，再收紧服务端。**
+  2. **别用 `Content-Length: 0` 判断「没有请求体」**：跨站表单即使没有字段也会带 `urlencoded` 头和空体，用长度判断区分不出来；真正的区分点是 Content-Type。
+  3. **拒绝超大请求时要关连接**：请求体还没读完就返回 413，必须 `close_connection = True`，否则残余字节会被当成下一个请求解析（HTTP 报文错位）。
+  4. **明确写下这层的边界**：Origin 只校验主机名不校验端口、没有会话令牌。它挡的是「任意外部网站」和「DNS rebinding」，不是「同机同权限的进程」。**要对外开放端口就必须重新评估并加令牌。**
+  5. 集成测试里凡是会改状态的接口（`/api/jobs`、`/api/pause`）都要 `patch` 掉真正的业务函数，否则测试会真的起任务、真的写暂停文件。
+
 

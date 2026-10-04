@@ -19,26 +19,56 @@ from .web_jobs import (
 )
 from .web_progress import build_progress_snapshot
 from .web_project import PROJECT_ROOT, PROJECT_ROOT_ENV, SRC_DIR, resolve_project_root
+from .web_security import (
+    SECURITY_HEADERS,
+    Rejection,
+    RequestRejected,
+    inspect_request,
+    read_json_body,
+)
 from .webui_page import PAGE as TERMINAL_PAGE
 
 PAGE = TERMINAL_PAGE
 
+#: 单个请求的处理超时（秒）。避免慢连接长期占住工作线程。
+REQUEST_TIMEOUT_SECONDS = 30
+
+
 class Handler(BaseHTTPRequestHandler):
+    timeout = REQUEST_TIMEOUT_SECONDS
+
+    def _send_headers(self, status: int, content_type: str, length: int) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(length))
+        for name, value in SECURITY_HEADERS.items():
+            self.send_header(name, value)
+        self.end_headers()
+
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
+        self._send_headers(status, "application/json; charset=utf-8", len(body))
         self.wfile.write(body)
 
+    def _reject(self, rejection: Rejection) -> None:
+        # 请求体可能还没读完，直接关闭连接，避免 HTTP 报文错位
+        self.close_connection = True
+        self._send_json(rejection.status, {"error": rejection.message})
+
+    def _guard(self, *, json_body: bool) -> bool:
+        """所有 API 请求的统一安全校验：Host / Origin / Sec-Fetch-Site / Content-Type。"""
+        rejection = inspect_request(self.headers, json_body=json_body)
+        if rejection is None:
+            return True
+        self._reject(rejection)
+        return False
+
     def do_GET(self) -> None:  # noqa: N802
+        if not self._guard(json_body=False):
+            return
         if self.path in ("/", "/index.html"):
             body = PAGE.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
+            self._send_headers(200, "text/html; charset=utf-8", len(body))
             self.wfile.write(body)
             return
         if self.path == "/api/progress":
@@ -56,23 +86,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, job)
             return
         if self.path == "/favicon.ico":
-            self.send_response(204)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
+            self._send_headers(204, "text/plain", 0)
             return
         self._send_json(404, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
+        # 所有写接口统一过安全校验（Host / Origin / Sec-Fetch-Site / Content-Type）
+        if not self._guard(json_body=True):
+            return
+        try:
+            body = read_json_body(self)
+        except RequestRejected as exc:
+            self._reject(Rejection(exc.status, exc.message))
+            return
+
         if self.path == "/api/discuss":
             try:
-                length = int(self.headers.get("Content-Length", 0))
-                body = json.loads(self.rfile.read(length).decode("utf-8"))
                 message = str(body.get("message", "")).strip()
                 self._send_json(200, discuss_with_orchestrator(message))
             except ValueError as exc:
                 self._send_json(400, {"error": str(exc)})
-            except json.JSONDecodeError:
-                self._send_json(400, {"error": "请求体不是合法 JSON"})
             except Exception as exc:  # noqa: BLE001
                 self._send_json(500, {"error": f"服务器错误：{exc}"})
             return
@@ -89,8 +122,6 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/force-stop":
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
             if str(body.get("confirm", "")).strip() != "STOP":
                 self._send_json(400, {"error": "强制停止需要确认词 STOP"})
                 return
@@ -110,14 +141,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/jobs":
             try:
-                length = int(self.headers.get("Content-Length", 0))
-                body = json.loads(self.rfile.read(length).decode("utf-8"))
                 command = str(body.get("command", "")).strip()
                 self._send_json(202, start_command_job(command))
             except ValueError as exc:
                 self._send_json(400, {"error": str(exc)})
-            except json.JSONDecodeError:
-                self._send_json(400, {"error": "请求体不是合法 JSON"})
             except Exception as exc:  # noqa: BLE001
                 self._send_json(500, {"error": f"服务器错误：{exc}"})
             return
@@ -126,16 +153,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "not found"})
             return
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length).decode("utf-8"))
             command = str(body.get("command", "")).strip()
             args = build_command(command)
             code, output = run_cli(args)
             self._send_json(200, {"code": code, "output": output})
         except ValueError as exc:
             self._send_json(400, {"error": str(exc)})
-        except json.JSONDecodeError:
-            self._send_json(400, {"error": "请求体不是合法 JSON"})
         except subprocess.TimeoutExpired:
             self._send_json(408, {"error": "命令执行超时"})
         except Exception as exc:  # noqa: BLE001

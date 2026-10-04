@@ -8,9 +8,9 @@
 
 - 项目根目录：`C:\Users\lwz12\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手`
 - 当前分支：`main`
-- 当前本地版本：`v0.17.13`
+- 当前本地版本：`v0.17.14`
 - 远端公开基线：`origin/main` / tag `v0.17.6` / commit `168aa6f`
-- 本地状态：提交后预计比远端 ahead 8（v0.17.7 到 v0.17.13），未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+- 本地状态：提交后预计比远端 ahead 9（v0.17.7 到 v0.17.14），未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
 - 用户要求：继续推进项目，把发现的问题都解决，重点关注安全性、可靠性、权限分级；**项目要有自己独立的知识库，程序不写到项目之外**。
 
 ## 2. 接手后第一步必须做
@@ -28,10 +28,10 @@ python scripts/check-undefined-names.py src tests
 
 预期：
 
-- 分支应为 `main...origin/main [ahead 8]` 左右。
-- 全量测试应通过，当前基线是 **243 项 OK**；最稳的跑法是直接 `python scripts/run-tests.py`。
+- 分支应为 `main...origin/main [ahead 9]` 左右。
+- 全量测试应通过，当前基线是 **269 项 OK**；最稳的跑法是直接 `python scripts/run-tests.py`。
 - `scripts/check-undefined-names.py` 应输出 `OK`（退出码 0）。
-- 正常接手时，v0.17.11 / v0.17.12 / v0.17.13 应已经本地提交；如果 `git status` 仍显示未提交，先检查 diff 和测试，再提交。
+- 正常接手时，v0.17.11 / v0.17.12 / v0.17.13 / v0.17.14 应已经本地提交；如果 `git status` 仍显示未提交，先检查 diff 和测试，再提交。
 
 ```powershell
 git add -- .
@@ -56,8 +56,17 @@ git commit -m "feat: enforce runtime permission boundaries"
 6. `9a18c65 fix: restore packaged CLI invocation`（v0.17.12）
 7. `acad8f5 chore: add undefined-name static check script`
 8. v0.17.13 权限强制点与写入硬边界，提交信息：`feat: enforce runtime permission boundaries`
+9. v0.17.14 本机 Web API 请求加固，提交信息：`feat: harden local web api requests`
 
 ## 4. 已完成的问题闭环
+
+### v0.17.14：本机 Web API 请求加固（台账「安全方案 · 问题 2」第一版）
+
+- 问题：API 绑在 `127.0.0.1` 但没有 Host / Origin 校验和请求体上限。威胁是 DNS rebinding（别人的域名解析到本机、浏览器视为同源可读响应）和跨站触发（任意网页 `fetch` 本机接口，响应被 CORS 挡住但**副作用已发生**：起任务、花 API 钱、写文件）。
+- 修复：新增 `src/code_agent_collab/web_security.py`；`webui.Handler` 的 `do_GET`/`do_POST` 入口统一校验。Host 只接受回环地址；`Origin`/`Referer` 必须回环；`Sec-Fetch-Site: cross-site` 拒绝；写接口只接受 `application/json`（跨站表单发不了这个头，带它的跨站请求会先撞 CORS 预检）；`Content-Length` > 64 KiB 在读之前 413；响应加 `nosniff` / `no-referrer` / `no-store`；单请求超时 30 秒。
+- **配套必改**：页面 `/api/pause` 的 `fetch` 原本没带 Content-Type，只加防线会让暂停按钮失灵，已一并改掉。
+- 验证：新增 `tests/test_web_security.py` 26 项（含起真实服务器的集成用例，关键断言是「跨站 POST → 403 且业务函数没被调用」）；真实服务冒烟 `GET /` 200、同源 POST 200、跨站 POST 403、表单型 415、假 Host 403；全量 **269 项 OK**。
+- 遗留：N36 —— 仍无会话令牌、Origin 不校验端口。**要对外开放端口必须先加令牌。**
 
 ### v0.17.13：N5 权限运行时强制点 + 「项目外一律不写」硬边界
 
@@ -130,9 +139,10 @@ git commit -m "feat: enforce runtime permission boundaries"
    - 剩余是完成度问题，拆成 N30–N35：未接入的 20+ 写入点（N30，P1）、可绕过边界的环境变量（N31）、声明与行为不一致的 Agent（N32/N33）、MCP 子进程（N34）。
    - 下一步建议：按 N30 分批接入，优先 `config.py`、`review._mark_status`、`reflection.py`。
 
-4. Web API 安全项。
-   - Host / Origin / 请求体大小 / 本地访问边界。
-   - 做之前先读 `webui.py`、`web_jobs.py`、`web_project.py`、`tests/test_webui.py`。
+4. Web API 安全项 —— **请求级加固已完成第一版（v0.17.14）**。
+   - 已有：Host / Origin / Sec-Fetch-Site / Content-Type 校验、请求体 64 KiB 上限、安全响应头、请求超时。
+   - 剩余 N36：没有会话令牌，Origin 不校验端口。**要把端口对外开放（哪怕只是局域网）必须先补令牌。**
+   - 下一项是本批的 B3：任务重复提交、无限并发与 job 记录丢失（台账「安全方案 · 问题 3」），相关代码 `web_jobs.py` 的 `start_command_job` / `_JOBS`。
 
 5. 其他：N10/N14/N15/N16/N17/N18/N6/N7/N8。
 
@@ -140,11 +150,12 @@ git commit -m "feat: enforce runtime permission boundaries"
 
 - 问题台账：`C:\Users\lwz12\Desktop\多Agent代码协作助手-当前问题整理.md`
 - 项目规则：`AGENTS.md`
-- 技能沉淀：`SKILLS.md`（§48 是本轮权限边界的完整说明）
+- 技能沉淀：`SKILLS.md`（§48 权限边界、§49 Web API 加固）
 - 变更记录：`CHANGELOG.md`
 - 版本记录：`VERSIONING.md`
 - 权限强制点：`src/code_agent_collab/permissions.py`
 - 权限测试：`tests/test_permissions.py`；入库边界测试在 `tests/test_review.py`
+- Web 请求防线：`src/code_agent_collab/web_security.py`；测试 `tests/test_web_security.py`（含起真实服务器的集成用例）
 - N29 代码：`src/code_agent_collab/web_jobs.py`（frozen 分支）、常量定义在 `src/code_agent_collab/web_project.py`
 - N29 测试：`tests/test_webui.py`（`RunCliTests`）
 - 未定义名字自查脚本：`scripts/check-undefined-names.py`（`symtable` 按作用域扫描，`python scripts/check-undefined-names.py src tests`，退出码 1 表示有命中）

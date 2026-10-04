@@ -1039,7 +1039,12 @@ PAGE = """<!DOCTYPE html>
   async function pauseCurrentWork() {
     if (pauseWork) pauseWork.disabled = true;
     try {
-      const resp = await fetch("/api/pause", { method: "POST" });
+      // 必须带 JSON Content-Type：服务端用它把跨站"简单请求"挡掉
+      const resp = await fetch("/api/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
       const data = await resp.json();
       append(`[${nowStamp()}] ! pause`, "cmdline");
       append(data.output || "已发送暂停请求。", resp.ok ? "out" : "err");
