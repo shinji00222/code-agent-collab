@@ -8,9 +8,9 @@
 
 - 项目根目录：`C:\Users\lwz12\Desktop\AI工作台知识库\01-项目\project 多Agent代码协作助手`
 - 当前分支：`main`
-- 当前本地版本：`v0.17.11`
+- 当前本地版本：`v0.17.12`
 - 远端公开基线：`origin/main` / tag `v0.17.6` / commit `168aa6f`
-- 本地状态：提交后预计比远端 ahead 5（v0.17.7 到 v0.17.11），未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+- 本地状态：提交后预计比远端 ahead 6（v0.17.7 到 v0.17.12），未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
 - 用户要求：继续推进项目，把发现的问题都解决，重点关注安全性、可靠性、权限分级。
 
 ## 2. 接手后第一步必须做
@@ -27,13 +27,13 @@ python scripts/run-tests.py
 
 预期：
 
-- 分支应为 `main...origin/main [ahead 5]` 左右。
-- 全量测试应通过；v0.17.11 前 targeted 测试已通过：`python -m unittest tests.test_adaptive_workflow` → 14 项 OK。
-- 正常接手时，v0.17.11 应已经本地提交；如果 `git status` 仍显示 v0.17.11 相关文件未提交，先检查 diff 和测试，再提交：
+- 分支应为 `main...origin/main [ahead 6]` 左右。
+- 全量测试应通过，当前基线是 **225 项 OK**；v0.17.12 的 targeted 复验是 `python -m unittest tests.test_adaptive_workflow` → 14 项 OK（注意该模块名只在 `PYTHONPATH` 含 `tests` 时可直接按模块名导入，最稳的是直接跑 `python scripts/run-tests.py`）。
+- 正常接手时，v0.17.11 / v0.17.12 应已经本地提交；如果 `git status` 仍显示未提交，先检查 diff 和测试，再提交。
 
 ```powershell
 git add -- .
-git commit -m "feat: preserve worker run attempt history"
+git commit -m "fix: restore packaged CLI invocation"
 ```
 
 不要 push / tag / release，除非 shin 明确要求。
@@ -50,9 +50,18 @@ git commit -m "feat: preserve worker run attempt history"
 2. `85f10e1 fix: prefer latest apply draft revision`（v0.17.8）
 3. `de4f691 fix: prevent confirm overwrite`（v0.17.9）
 4. `65016be test: cover integrator checkpoint state`（v0.17.10）
-5. v0.17.11 当前正在收尾，预计提交信息：`feat: preserve worker run attempt history`
+5. `6a8eef5 feat: preserve worker run attempt history`（v0.17.11）
+6. v0.17.12 打包版 `run_cli` 回归修复，提交信息：`fix: restore packaged CLI invocation`
 
 ## 4. 已完成的问题闭环
+
+### v0.17.12：N29 打包版 `run_cli` 漏导入，任务全跑不了
+
+- 问题：`web_jobs.run_cli()` 的 frozen 分支用了未导入的 `Path` 和 `CLI_EXE_NAME`，打包版一提交任务就抛 `NameError: name 'Path' is not defined`。
+- 回归来源：v0.17.5（`fdd270d`）拆分 `webui.py` 时漏搬这两个导入，已推送基线 v0.17.6 里同样存在。
+- 修复：补 `from pathlib import Path`，并从 `web_project` 导入 `CLI_EXE_NAME`。
+- 验证：`tests/test_webui.py` 新增 frozen / 源码两条 `run_cli` 命令构造测试；临时回退修复后新测试确实报 `NameError`，恢复后全量 **225 项 OK**。
+- 遗留边界：`dist/` 里的 EXE 是 2026-09-16 打的旧包（早于该回归），所以旧包可用；**下一次重新打 Windows 包前必须先包含本修复**。
 
 ### v0.17.7：N11 单项目旧暂停请求残留
 
@@ -120,8 +129,9 @@ git commit -m "feat: preserve worker run attempt history"
 - 技能沉淀：`SKILLS.md`
 - 变更记录：`CHANGELOG.md`
 - 版本记录：`VERSIONING.md`
-- 当前 N12 代码：`src/code_agent_collab/worker_runs.py`
-- 当前 N12 测试：`tests/test_adaptive_workflow.py`
+- 当前 N29 代码：`src/code_agent_collab/web_jobs.py`（frozen 分支）、常量定义在 `src/code_agent_collab/web_project.py`
+- 当前 N29 测试：`tests/test_webui.py`（`RunCliTests`）
+- 未定义名字自查脚本：`C:\Users\lwz12\Desktop\AI工作台知识库\work\check-undefined-names.py`（一次性工具，`symtable` 扫描，`__file__` 命中属误报）
 
 ## 7. 安全边界和禁止事项
 

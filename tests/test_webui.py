@@ -11,6 +11,7 @@ from unittest.mock import patch
 from code_agent_collab.agents.orchestrator import WorkerSpec
 from code_agent_collab.blackboard import mark_agent_running
 from code_agent_collab.progress import publish_progress
+from code_agent_collab.web_project import CLI_EXE_NAME
 from code_agent_collab.webui import (
     PAGE,
     PROJECT_ROOT,
@@ -28,6 +29,28 @@ from code_agent_collab.webui import (
     run_cli,
     start_command_job,
 )
+
+
+class _StubProcess:
+    """替身进程：只实现 run_cli 会用到的最小接口，避免测试真的拉起子进程。"""
+
+    returncode = 0
+
+    def communicate(self, timeout: int | None = None) -> tuple[str, str]:
+        del timeout
+        return "stub-output", ""
+
+    def poll(self) -> int:
+        return 0
+
+
+def _record_popen(spawned: dict[str, object]):
+    def fake_popen(command, **kwargs):  # noqa: ANN001, ANN202
+        spawned["command"] = command
+        spawned["cwd"] = kwargs.get("cwd")
+        return _StubProcess()
+
+    return fake_popen
 
 
 class CommandBuildTests(unittest.TestCase):
@@ -57,6 +80,48 @@ class RunCliTests(unittest.TestCase):
         code, output = run_cli(["provider"])
         self.assertEqual(code, 0)
         self.assertIn("当前 Provider", output)
+
+    def test_frozen_mode_uses_sibling_cli_executable(self) -> None:
+        """打包版必须调用同目录的 CLI 可执行程序。
+
+        钉住 v0.17.5 拆分 `webui.py` 时的回归：`run_cli` 一度用到未导入的
+        `Path` 与 `CLI_EXE_NAME`，只有 frozen 分支才会走到，普通测试和页面冒烟都发现不了。
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            exe_dir = Path(tmp) / "app"
+            exe_dir.mkdir()
+            executable = exe_dir / "MultiAgentWorkbench.exe"
+            spawned: dict[str, object] = {}
+
+            with patch.object(sys, "frozen", True, create=True), patch.object(
+                sys, "executable", str(executable)
+            ), patch.object(
+                subprocess, "Popen", side_effect=_record_popen(spawned)
+            ):
+                code, output = run_cli(["provider"])
+
+            self.assertEqual(code, 0)
+            self.assertEqual(output, "stub-output")
+            self.assertEqual(
+                spawned["command"],
+                [str(exe_dir / CLI_EXE_NAME), "provider"],
+            )
+            self.assertEqual(spawned["cwd"], PROJECT_ROOT)
+
+    def test_source_mode_invokes_cli_module(self) -> None:
+        spawned: dict[str, object] = {}
+
+        with patch.object(sys, "frozen", False, create=True), patch.object(
+            subprocess, "Popen", side_effect=_record_popen(spawned)
+        ):
+            code, output = run_cli(["pending"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(output, "stub-output")
+        self.assertEqual(
+            spawned["command"],
+            [sys.executable, "-m", "code_agent_collab.cli", "pending"],
+        )
 
     def test_kill_process_tree_terminates_child(self) -> None:
         process = subprocess.Popen(

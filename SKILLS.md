@@ -487,3 +487,15 @@ python -m unittest discover -s tests
 - 怎么验证：`tests.test_adaptive_workflow` 中模块 B 先失败再成功，断言内存记录和 `workers.json` 都保留 `running -> failed -> running -> success`。
 - 常见坑：顶层字段仍表示最新状态，供 `should_skip_worker()` 快速判断；不要把 UI 或跳过逻辑改成只看 attempts 的最后一项，避免旧数据兼容问题。
 
+## 47. 打包模式 `run_cli` 与「拆分模块后的隐形断链」（v0.17.12）
+
+- 做什么：`web_jobs.run_cli()` 在 frozen（PyInstaller 打包）模式下要调用同目录的 `AgentWorkbench-CLI.exe`；源码模式下调用 `python -m code_agent_collab.cli`。两条分支都要能构造出正确命令。
+- 为什么：v0.17.5 把 `webui.py` 拆成 `web_jobs.py` / `web_project.py` 等模块时，frozen 分支用的 `Path` 和 `CLI_EXE_NAME` 没有一起搬过来。因为 `Path` 没 import、`CLI_EXE_NAME` 只在 `web_project.py` 定义，打包版一提交任务就 `NameError: name 'Path' is not defined`——**窗口能开、页面能显示，但一个任务都跑不了**。这类 bug 已进入推送基线 v0.17.6，本机旧 EXE（9/16 打的）早于该回归所以还能用，很容易被误判成"打包版没问题"。
+- 怎么做：补 `from pathlib import Path`，并改成 `from .web_project import CLI_EXE_NAME, PROJECT_ROOT, SRC_DIR`；不要为了让测试好写而在 `web_jobs.py` 里重新定义常量。
+- 怎么验证：`tests/test_webui.py` 的 `RunCliTests` 用替身进程分别覆盖 frozen 与源码两条分支，断言命令列表等于 `[<同目录>/AgentWorkbench-CLI.exe, "provider"]` 和 `[sys.executable, "-m", "code_agent_collab.cli", "pending"]`。改完还要做一次「反向验证」：临时回退修复，确认新测试真的报 `NameError`。
+- 常见坑：
+  1. **`py_compile` 和 unittest 都抓不到这类错误**——只有真的走到那一行才炸，而现有打包冒烟只验证"页面 HTTP 200 且包含 `/api/jobs`"，属于间接证据，不能替代真实分支覆盖。
+  2. 拆分模块后要专门找"引用了但没定义/没导入"的全局名字。可用一次性脚本 `work/check-undefined-names.py`（`symtable` 扫描，输出里 `__file__` 属误报）。
+  3. 判断"打包版能不能用"不能只看 EXE 存在或窗口能打开，必须让 frozen 分支真正执行一次。
+
+

@@ -8,9 +8,10 @@ import sys
 import threading
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .control import clear_pause_request
-from .web_project import PROJECT_ROOT, SRC_DIR
+from .web_project import CLI_EXE_NAME, PROJECT_ROOT, SRC_DIR
 
 ALLOWED_COMMANDS = {
     "init",

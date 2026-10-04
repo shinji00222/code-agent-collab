@@ -177,6 +177,7 @@
 - v0.17.9：confirm 防覆盖安全修复版；人工确认候选入库前检查目标文件是否已存在，拒绝覆盖已有知识文件。
 - v0.17.10：checkpoint integrator 状态回归版；补测试确认暂停断点会保留 `latest_integrator_specs`，防止恢复后丢失 Integrator 重跑依据。
 - v0.17.11：WorkerRun attempts 历史账本版；`workers.json` 新增 `attempts` 历史列表，保留失败/重试过程。
+- v0.17.12：打包版 CLI 调用回归修复版；`web_jobs.run_cli()` 补回拆分时漏掉的 `Path` 与 `CLI_EXE_NAME`，并用 frozen 模式测试钉住，避免打包版一提交任务就 `NameError`。
 - 全局 / repo / module / task / agent 私有记忆分层；
 - 短期 / 长期 memory 区分；
 - context selection 策略；
@@ -235,4 +236,5 @@
 - 2026-10-04：`v0.17.9` 用于 confirm 防覆盖安全修复；当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
 - 2026-10-04：`v0.17.10` 用于 checkpoint integrator 状态回归验证；当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
 - 2026-10-04：`v0.17.11` 用于 WorkerRun attempts 历史账本；当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
+- 2026-10-04：`v0.17.12` 用于打包版 `run_cli` 回归修复（漏导入 `Path` / `CLI_EXE_NAME`）；这是修复版，当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。**注意：下一次重新打 Windows 包之前必须先包含本修复，否则打包版一提交任务就报 `NameError`。**
 - 不要只看本地版本号判断发布状态；要同时看 `git status --short --branch`、`git rev-parse HEAD` 和 `git ls-remote origin refs/heads/main`。

@@ -1,5 +1,30 @@
 # 更新日志
 
+## v0.17.12 - 2026-10-04（打包版 CLI 调用回归修复版）
+
+### 修正：打包版窗口一提交任务就 `NameError`
+
+- `web_jobs.run_cli()` 的 frozen 分支用了 `Path` 和 `CLI_EXE_NAME`，但这两个名字都没有导入，打包版会直接抛 `NameError: name 'Path' is not defined`。
+- 影响：打包出来的 Windows 软件，窗口能开、页面能显示，但**任何任务提交都会立刻失败**（界面提示「服务器错误：name 'Path' is not defined」）。
+- 回归来源：v0.17.5（`fdd270d`）把 `webui.py` 拆成多个模块时漏掉了这两个导入；已推送基线 `v0.17.6`（`168aa6f`）里同样存在。
+- 修复：`web_jobs.py` 补回 `from pathlib import Path`，并从 `web_project` 导入 `CLI_EXE_NAME`。
+
+### 新增测试
+
+- `tests/test_webui.py` 新增两条 `run_cli` 命令构造测试：frozen 模式断言调用同目录 CLI 可执行程序，源码模式断言调用 `-m code_agent_collab.cli`；用替身进程避免真的拉起子进程。
+- 已实测「测试能抓到 bug」：临时回退修复后，新测试报 `NameError: name 'Path' is not defined`；恢复修复后通过。
+
+### 边界
+
+- 本次只修命令构造，不改变打包流程和命令白名单。
+- `dist/` 里的 EXE 是 2026-09-16 打的旧包，**早于本次回归**，所以手头旧包仍可用；但下一次重新打 Windows 包之前必须先包含本修复。
+- 本轮未 push、未打 tag、未发 GitHub Release、未重新打 Windows 包。
+
+### 测试
+
+- 全量测试：`$env:AGENT_WORKBENCH_PROVIDER='mock'; python scripts/run-tests.py` → **225 项 OK**（原 223 + 新增 2）。
+
+
 ## v0.17.11 - 2026-10-04（WorkerRun attempts 历史账本版）
 
 ### 修正：WorkerRun 保留每次运行尝试
