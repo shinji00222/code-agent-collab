@@ -1,4 +1,4 @@
-"""Stage Python.NET assemblies under an ASCII path before pywebview imports clr."""
+"""Stage frozen .NET and pywebview interop libraries under an ASCII path."""
 
 from __future__ import annotations
 
@@ -77,4 +77,66 @@ def _stage_pythonnet() -> None:
     pythonnet.__file__ = str(staged_package / "__init__.py")
 
 
+def _stage_webview_interop() -> None:
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return
+
+    import webview.util
+
+    source_lib = Path(webview.util.__file__).parent / "lib"
+    if not source_lib.is_dir():
+        raise FileNotFoundError(f"pywebview interop libraries missing: {source_lib}")
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        local_app_data = tempfile.gettempdir()
+    cache_root = _ascii_existing_path(local_app_data) / "CodeAgentCollab" / "webview"
+    digest = hashlib.sha256()
+    files = sorted(path for path in source_lib.rglob("*") if path.is_file())
+    for path in files:
+        digest.update(path.relative_to(source_lib).as_posix().encode("utf-8"))
+        digest.update(path.read_bytes())
+    staged_lib = cache_root / digest.hexdigest()[:16] / "lib"
+
+    if not staged_lib.is_dir():
+        staged_lib.parent.mkdir(parents=True, exist_ok=True)
+        staging_root = Path(tempfile.mkdtemp(prefix=".stage-", dir=staged_lib.parent))
+        try:
+            candidate = staging_root / "lib"
+            shutil.copytree(source_lib, candidate)
+            try:
+                os.rename(candidate, staged_lib)
+            except FileExistsError:
+                # Another app instance completed the same version while we copied.
+                if not staged_lib.is_dir():
+                    raise
+        finally:
+            shutil.rmtree(staging_root, ignore_errors=True)
+
+    if not staged_lib.is_dir():
+        raise FileNotFoundError(f"pywebview interop staging failed: {staged_lib}")
+
+    original_path = webview.util.interop_dll_path
+
+    def interop_dll_path(dll_name: str) -> str:
+        if dll_name == "WebBrowserInterop.dll":
+            import struct
+
+            dll_name = (
+                "WebBrowserInterop.x64.dll"
+                if struct.calcsize("P") == 8
+                else "WebBrowserInterop.x86.dll"
+            )
+        candidate = staged_lib / dll_name
+        if candidate.is_file():
+            return str(candidate)
+        native_candidates = sorted(staged_lib.glob(f"runtimes/*/native/{dll_name}"))
+        if native_candidates:
+            return str(native_candidates[0])
+        return original_path(dll_name)
+
+    webview.util.interop_dll_path = interop_dll_path
+
+
 _stage_pythonnet()
+_stage_webview_interop()

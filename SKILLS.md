@@ -579,12 +579,12 @@ python -m unittest discover -s tests
 - 怎么验证：`python scripts/run-tests.py test_reviewer test_adaptive_workflow` → 37 项 OK；全量 `python scripts/run-tests.py` → 295 项 OK。Reviewer 用例覆盖 Integrator、Coder、混合/未知归属；workflow 用例确认仅 Integrator 问题不重跑 Coder、仍重跑 Integrator。
 - 常见坑：合并草稿的长度、敏感信息、知识库路径引用可能源于 Coder，也可能由合并过程引入，必须视为来源不确定并重跑两者；不能仅凭“评审的是 integrated-draft”就跳过 Coder。
 
-## 53. Windows 冻结版 Python.NET 运行时路径（v0.17.16，桌面启动验收待完成）
+## 53. Windows 冻结版 .NET 依赖路径（v0.17.16）
 
-- 做什么：PyInstaller onedir 桌面包把 `pythonnet/runtime` 首次复制到用户 Local AppData 下的 ASCII 路径，再由 runtime hook 引导 Python.NET 从该位置加载 .NET Framework DLL。
-- 为什么：相同 `Python.Runtime.dll` 在项目中文路径下触发 `Python.Runtime.Loader.Initialize`，复制到 ASCII Local AppData 目录后可初始化；DLL 哈希一致，未发现 Zone.Identifier。
-- 怎么做：`scripts/runtime_hook_pythonnet_path.py` 只在 frozen Windows 环境执行；构建保留桌面入口 EXE 路径，将 `_internal` 作为同级依赖复制进压缩包。
-- 怎么验证：hook + `clr` + `webview.platforms.winforms` 导入检查退出码为 0；全量测试 295 项 OK。**这些检查还不等同于最终打包 EXE 已启动**；必须再检查桌面主进程、首页 HTTP 200 和关窗后端口释放，成功后才可发布。
-- 常见坑：PyInstaller 构建和 zip 生成成功不代表桌面版能启动；不要绕过 SmartScreen。若启动拦截状态无法从自动化工具确认，需人工检查 Windows 提示并继续实机验收。
+- 做什么：PyInstaller onedir 桌面包把 Python.NET runtime 和 pywebview 的 `lib` 目录首次复制到用户 Local AppData 下的 ASCII 路径，再从那里加载 .NET Framework 程序集。
+- 为什么：最终路径在中文项目目录时，CLR 拒绝直接加载 `_internal/webview/lib/Microsoft.Web.WebView2.Core.dll`（HRESULT `0x80131515`）；同一候选在 ASCII 路径启动成功。将互操作 DLL 与 native loader 一并暂存后，原项目目录中的最终包也可启动。
+- 怎么做：`scripts/runtime_hook_pythonnet_path.py` 仅在 frozen Windows 环境执行；按文件内容摘要缓存 Python.NET 和 webview 库，通过包装 `webview.util.interop_dll_path()` 把程序集加载改到 ASCII 缓存。构建保留桌面入口 EXE 路径，将 `_internal` 作为同级依赖放入压缩包。
+- 怎么验证：模块 smoke check 成功；最终打包 EXE 标题为“多Agent工作台”、窗口响应正常，首页 HTTP 200 且包含 `/api/jobs` 与 `pollJob`；通过 `CloseMainWindow()` 关闭后进程退出、8765 端口释放；全量测试 295 项 OK。
+- 常见坑：PyInstaller 构建和 zip 生成成功不代表桌面版能启动；要用最终压缩包中的 EXE 在中文项目路径实测窗口、HTTP 和关窗清理。不要绕过 SmartScreen。
 
 

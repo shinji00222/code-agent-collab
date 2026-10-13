@@ -59,7 +59,7 @@ Notes:
 - API keys are not saved into this folder or the Git repository.
 - Keep MultiAgentWorkbench.exe, its _internal folder, and AgentWorkbench-CLI.exe together.
 - MultiAgentWorkbench.exe embeds the same local Web UI used during development. It should not open a browser tab.
-- The first launch stages the Python.NET runtime in the current Windows user's Local AppData cache so the app also works from non-ASCII project paths.
+- The first launch stages Python.NET and WebView2 interop libraries in the current Windows user's Local AppData cache so the app also works from non-ASCII project paths.
 "@
 Set-Content -LiteralPath (Join-Path $packageDir "START_HERE.txt") -Value $startHere -Encoding UTF8
 

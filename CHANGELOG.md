@@ -1,21 +1,27 @@
 # 更新日志
 
-## v0.17.16 - 2026-10-09（Windows 桌面启动修复版）
+## v0.17.16 - 2026-10-13（Windows 桌面启动修复版）
 
 ### 修复：重建过期的 Windows 桌面包
 
-- 修复前，桌面快捷方式指向的 `dist\MultiAgentWorkbench.exe` 仍是 2026-09-16 的旧构建；它启动后没有建立本机 Web 服务。当前源码启动服务并返回 HTTP 200，表明问题集中在旧打包产物。
-- 用当前 v0.17.16 源码重新构建桌面 EXE、CLI 和 Windows zip；快捷方式目标路径保持不变，因此本机入口继续有效。
+- 桌面包从中文项目路径启动时，.NET Framework 拒绝直接加载打包在 `_internal/webview/lib` 下的 WebView2 程序集（HRESULT `0x80131515`）。
+- runtime hook 现会把 Python.NET runtime 和 pywebview `lib` 暂存到用户 Local AppData 的 ASCII 路径，再从缓存加载；桌面 EXE 改为 onedir，快捷方式目标路径保持不变。
+- 用当前源码重新构建桌面 EXE、CLI 和 Windows zip。
 - 同时包含 v0.17.12 之后的打包修复和 v0.17.15 的任务队列等更新。
+
+### 改进：Reviewer 定向返工
+
+- Reviewer 明确判断问题只在 Integrator 合并结构时，只重跑 Integrator，不再重复调用 Coder；问题来源不明或涉及内容、安全、权限时，仍保守地重跑 Coder 和 Integrator。
+- `python scripts/run-tests.py test_reviewer test_adaptive_workflow` 可按模块筛选测试；定向 37 项通过。
 
 ### 版本说明
 
 - 分类：修复版；版本号：`v0.17.16`。
 - 适用对象：Windows 本地桌面工作台用户。
 - 兼容性：不改变工作区数据格式或命令接口；升级时需用新版目录中的 EXE 与 CLI 一起替换旧文件。
-- 安装/升级：解压 `AgentWorkbench-v0.17.16-windows.zip`，保持两个 EXE 和 `setup-provider.ps1` 同目录；桌面快捷方式需指向新版 `MultiAgentWorkbench.exe`。
-- 验证：源码全量测试 **295 项 OK**；runtime hook + Python.NET + WinForms 导入检查退出码 0。最终打包 EXE 尚未通过主进程、HTTP 首页和关窗端口释放验收，当前不能视为可发布状态。
-- 已知风险：桌面窗口依赖 Windows WebView2 Runtime；候选包启动检查未建立目标监听端口，Windows SmartScreen 状态无法通过当前自动化界面确认。
+- 安装/升级：解压 `AgentWorkbench-v0.17.16-windows.zip`，保持 `MultiAgentWorkbench.exe`、其同级 `_internal` 文件夹、`AgentWorkbench-CLI.exe` 和 `setup-provider.ps1` 一起；桌面快捷方式需指向新版 `MultiAgentWorkbench.exe`。
+- 验证：全量测试 **295 项 OK**；最终压缩包里的 EXE 在中文项目路径启动，窗口标题“多Agent工作台”、进程响应正常，首页 HTTP 200 并包含 `/api/jobs` 和 `pollJob`；正常关窗后进程退出且 8765 端口释放。
+- 已知风险：桌面窗口依赖 Windows WebView2 Runtime。
 
 ## v0.17.15 - 2026-10-04（后台任务并发/去重/持久化版 + 两处可靠性修复）
 
