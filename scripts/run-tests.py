@@ -56,6 +56,8 @@ def main(argv: list[str]) -> int:
     os.environ["AGENT_WORKBENCH_PROVIDER"] = os.getenv("AGENT_WORKBENCH_TEST_PROVIDER", "mock")
 
     tests_dir = str(PROJECT_ROOT / "tests")
+    if tests_dir not in sys.path:
+        sys.path.insert(0, tests_dir)
     loader = unittest.TestLoader()
     if argv:
         suite = unittest.TestSuite(

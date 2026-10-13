@@ -182,6 +182,7 @@ class SchedulerTests(unittest.TestCase):
                 time.sleep(0.02)
             self.assertTrue(scheduler.get(first.id)["done"])
             second, duplicated = scheduler.submit("help")
+            _drain(scheduler)
         self.assertFalse(duplicated)
         self.assertNotEqual(first.id, second.id)
 

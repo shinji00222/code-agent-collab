@@ -49,6 +49,13 @@
 - 怎么做：新功能模块升次版本；发布前测试通过、Git 状态干净、更新 CHANGELOG、打 tag；公开仓库用干净快照分支。
 - 常见坑：只上传代码不写版本说明；忘记同步 CHANGELOG/README；快照分支命名与用途不符（如 `agents/model-inquiry` 实际是 v0.3.0 发布快照）。
 
+### Windows 桌面版发布前验证
+
+- 做什么：桌面 EXE 无控制台，必须验证真实打包产物启动后是否建立本机服务，而非只依赖源码测试。
+- 怎么做：从 `scripts/package-windows.ps1` 生成版本化 zip；运行包内 `MultiAgentWorkbench.exe`，确认其 PID 监听 `127.0.0.1` 端口、页面返回 HTTP 200；关闭窗口后确认端口释放。快捷方式保持指向 `dist\MultiAgentWorkbench.exe` 时，重建该文件会自动更新本机入口。
+- 常见坑：PyInstaller 的 `--windowed` 会隐藏启动异常；旧 `dist` 文件时间可能远早于源码版本。仅检查快捷方式目标存在不能证明应用可启动。
+- 怎么验证：同时检查冻结版、服务端页面、关闭清理、zip 内容与校验和；记录 WebView2 Runtime 依赖。
+
 ## 6. 新增一个 Agent 角色的标准流程
 
 1. 在 `src/code_agent_collab/agents/` 新建 `<name>.py`，继承 `BaseAgent`，定义 `role` 和 `permission`。
@@ -563,5 +570,21 @@ python -m unittest discover -s tests
   1. **`Path.absolute()` 不折叠 `..`**，用它判目录包含会让 `..` 穿越漏过去；要用 `os.path.abspath`。
   2. **失败路径自己抛异常会掩盖真实错误**：`_publish_execution_failure()` 形参是 `done_roles`/`failed_roles`，两个调用点却传 `done=`/`failed=`，于是任何 worker 失败都会再抛 `TypeError`，把真正的原因盖掉。**每条 `except` 分支都要有测试走到**，否则「错误处理」本身可能是坏的。
   3. 「偶发失败」不要靠重跑蒙过去。先量化（跑 N 轮统计失败率），再插桩抓现场，最后用「修复前后各跑 N 轮」的对比作为证据。
+
+## 52. Fix Loop 按 Reviewer 问题归属返工（v0.17.16）
+
+- 做什么：复杂流程中，Reviewer 只指出合并草稿的结构/合并问题时，只重跑 Integrator；Coder 草稿契约或来源不确定的问题仍重跑 Coder，并在有 Integrator 时重新合并。
+- 为什么：让合并步骤自己的问题不要触发所有 Coder 再写一遍，减少不必要的模型调用，同时保留对来源不确定内容问题的保守处理。
+- 怎么做：`ReviewerAgent.last_issue_scope` 归类为 `coder`、`integrator` 或 `mixed`。只有明确为 `integrator` 时跳过 `_rerun_coders()`；缺少该字段的旧 Reviewer 对象默认按 `coder` 处理。
+- 怎么验证：`python scripts/run-tests.py test_reviewer test_adaptive_workflow` → 37 项 OK；全量 `python scripts/run-tests.py` → 295 项 OK。Reviewer 用例覆盖 Integrator、Coder、混合/未知归属；workflow 用例确认仅 Integrator 问题不重跑 Coder、仍重跑 Integrator。
+- 常见坑：合并草稿的长度、敏感信息、知识库路径引用可能源于 Coder，也可能由合并过程引入，必须视为来源不确定并重跑两者；不能仅凭“评审的是 integrated-draft”就跳过 Coder。
+
+## 53. Windows 冻结版 Python.NET 运行时路径（v0.17.16，桌面启动验收待完成）
+
+- 做什么：PyInstaller onedir 桌面包把 `pythonnet/runtime` 首次复制到用户 Local AppData 下的 ASCII 路径，再由 runtime hook 引导 Python.NET 从该位置加载 .NET Framework DLL。
+- 为什么：相同 `Python.Runtime.dll` 在项目中文路径下触发 `Python.Runtime.Loader.Initialize`，复制到 ASCII Local AppData 目录后可初始化；DLL 哈希一致，未发现 Zone.Identifier。
+- 怎么做：`scripts/runtime_hook_pythonnet_path.py` 只在 frozen Windows 环境执行；构建保留桌面入口 EXE 路径，将 `_internal` 作为同级依赖复制进压缩包。
+- 怎么验证：hook + `clr` + `webview.platforms.winforms` 导入检查退出码为 0；全量测试 295 项 OK。**这些检查还不等同于最终打包 EXE 已启动**；必须再检查桌面主进程、首页 HTTP 200 和关窗后端口释放，成功后才可发布。
+- 常见坑：PyInstaller 构建和 zip 生成成功不代表桌面版能启动；不要绕过 SmartScreen。若启动拦截状态无法从自动化工具确认，需人工检查 Windows 提示并继续实机验收。
 
 

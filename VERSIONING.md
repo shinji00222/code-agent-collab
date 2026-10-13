@@ -16,6 +16,10 @@
 
 当前处于本地优先多 Agent 工作台原型阶段：命令行闭环已具备，本地桌面窗口是默认用户入口；Web 终端保留为备用/调试入口，草稿应用能力仍按实验版管理。
 
+### v0.17.16 发布门槛（2026-10-13）
+
+分类为 Windows 桌面启动修复版，升级方式和兼容性说明见 `CHANGELOG.md`。当前源码全量测试 295 项通过，Python.NET/WinForms 导入 smoke check 通过；新 onedir 包的真实 EXE 尚未验证服务监听、首页响应和关窗释放端口，因此仍是待验收候选包，暂不打 tag 或推送。完成这些实机检查并通过隐私扫描后再发布。
+
 ## 版本分类
 
 ### v0.1.x：命令行基础闭环
@@ -181,6 +185,7 @@
 - v0.17.13：权限强制点与写入硬边界版；新增 `permissions.py` 把 `PermissionLevel` 变成运行时检查（N5），并定下「只写当前项目目录内、项目外一律拒绝」的硬边界。**行为变更**：把知识库写入目标配置到项目之外时 `confirm` 会被拒绝，不再写入。
 - v0.17.14：本机 Web API 请求加固版；新增 `web_security.py`，对所有 API 请求做 Host / Origin / Sec-Fetch-Site / Content-Type 校验，请求体上限 64 KiB，响应加安全头。页面 `/api/pause` 同步改带 JSON Content-Type。
 - v0.17.15：后台任务并发/去重/持久化版 + 两处可靠性修复；job 加并发上限（2）与等待队列上限（8，满了 429）、写命令串行、重复提交去重、记录落盘 `logs/jobs/` 且重启标记中断不重跑；同时修掉权限边界的路径判定偶发误判与 worker 失败上报的 `TypeError`。
+- v0.17.16：Windows 桌面启动修复版；替换 2026-09-16 的旧 EXE/CLI 构建，基于当前源码重打桌面 EXE 与 Windows zip，保留既有工作区数据和入口路径。
 - 全局 / repo / module / task / agent 私有记忆分层；
 - 短期 / 长期 memory 区分；
 - context selection 策略；
@@ -244,4 +249,5 @@
 - 2026-10-04：`v0.17.14` 用于本机 Web API 请求加固（Host / Origin / Content-Type / 请求体上限）；这是安全加固版，当前只做本地 commit，未 push、未打 tag、未发 Release、未重新打 Windows 包。
 - 2026-10-04：`v0.17.15` 用于后台任务并发/去重/持久化，并修掉权限路径判定偶发误判与 worker 失败上报 `TypeError`。
 - **2026-10-04 发布动作**：`v0.17.15` 已 push 到 `origin/main`（远端 main = `af5ba0f`），并推送附注 tag `v0.17.15`（tag 指向 `af5ba0f`）。本次一次性推送 v0.17.7 ~ v0.17.15 共 13 个提交；**v0.17.7 ~ v0.17.14 这 8 个中间版本没有单独打 tag**，只有 `v0.17.6` 与 `v0.17.15` 两个 tag 在远端。推送前已完成安全与隐私扫描。仍未发 GitHub Release、未重新打 Windows 包。**注意：下一次重新打 Windows 包之前必须先包含 `9a18c65`（N29 打包版回归修复）。**
+- 2026-10-09：`v0.17.16` 为 Windows 桌面启动修复版，当前在本地修复与重新打包；发布后补记 commit、tag、Release 与产物验证状态。
 - 不要只看本地版本号判断发布状态；要同时看 `git status --short --branch`、`git rev-parse HEAD` 和 `git ls-remote origin refs/heads/main`。

@@ -876,6 +876,8 @@ def _run_reviewer_fix_loop(
         and retry_count < MAX_REVIEW_RETRIES
     ):
         retry_count += 1
+        issue_scope = getattr(reviewer, "last_issue_scope", "coder")
+        rerun_coders = issue_scope != "integrator"
         _pause_if_requested(
             project_root,
             task_id=task_id,
@@ -889,53 +891,63 @@ def _run_reviewer_fix_loop(
             task_id=task_id,
             goal=goal,
             status="running",
-            detail="ReviewerAgent 未通过，进入 Fix Loop。",
+            detail=(
+                "ReviewerAgent 未通过，问题只在合并结果，进入 Integrator 定向返工。"
+                if not rerun_coders
+                else "ReviewerAgent 未通过，进入 Coder 与 Integrator Fix Loop。"
+            ),
             plan=plan,
             done=done_roles,
             running={"FixLoop"},
         )
-        try:
-            rewrite_results = _rerun_coders(
-                latest_coder_specs,
-                provider,
-                context,
-                results,
-                _reviewer_feedback(reviewer, reviewer_result),
-                retry_count,
-                stage_index=stage_index + 1,
-            )
-        except WorkerStageFailed as exc:
-            _extend_unique_results(results, exc.partial_results)
-            done_roles.update(exc.succeeded_roles)
-            _save_execution_checkpoint(
-                project_root,
-                task_id=task_id,
-                next_stage_index=stage_index,
-                done_roles=done_roles,
-                results=results,
-                latest_coder_specs=latest_coder_specs,
-                latest_integrator_specs=latest_integrator_specs,
-            )
-            _publish_execution_failure(
-                project_root,
-                task_id=task_id,
-                goal=goal,
-                detail=f"Fix Loop 有 worker 失败，已保存断点：{exc}",
-                plan=plan,
-                done_roles=done_roles,
-                failed_roles=exc.failed_roles,
-            )
-            raise RuntimeError(f"Fix Loop 有 worker 失败：{exc}") from exc
-        _extend_unique_results(results, rewrite_results)
+        if rerun_coders:
+            try:
+                rewrite_results = _rerun_coders(
+                    latest_coder_specs,
+                    provider,
+                    context,
+                    results,
+                    _reviewer_feedback(reviewer, reviewer_result),
+                    retry_count,
+                    stage_index=stage_index + 1,
+                )
+            except WorkerStageFailed as exc:
+                _extend_unique_results(results, exc.partial_results)
+                done_roles.update(exc.succeeded_roles)
+                _save_execution_checkpoint(
+                    project_root,
+                    task_id=task_id,
+                    next_stage_index=stage_index,
+                    done_roles=done_roles,
+                    results=results,
+                    latest_coder_specs=latest_coder_specs,
+                    latest_integrator_specs=latest_integrator_specs,
+                )
+                _publish_execution_failure(
+                    project_root,
+                    task_id=task_id,
+                    goal=goal,
+                    detail=f"Fix Loop 有 worker 失败，已保存断点：{exc}",
+                    plan=plan,
+                    done_roles=done_roles,
+                    failed_roles=exc.failed_roles,
+                )
+                raise RuntimeError(f"Fix Loop 有 worker 失败：{exc}") from exc
+            _extend_unique_results(results, rewrite_results)
         done_roles.add("FixLoop")
-        done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_coder_specs)
+        if rerun_coders:
+            done_roles.update(_stage_item(spec, 0)["role"] for spec in latest_coder_specs)
         if latest_integrator_specs:
             _publish_adaptive(
                 project_root,
                 task_id=task_id,
                 goal=goal,
                 status="running",
-                detail="CoderAgent 已重写，IntegratorAgent 正在重新合并草稿。",
+                detail=(
+                    "ReviewerAgent 发现合并结果问题，IntegratorAgent 正在定向修复。"
+                    if not rerun_coders
+                    else "CoderAgent 已重写，IntegratorAgent 正在重新合并草稿。"
+                ),
                 plan=plan,
                 done=done_roles,
                 running={"IntegratorAgent"},
@@ -967,12 +979,17 @@ def _run_reviewer_fix_loop(
             done=done_roles,
             next_role="ReviewerAgent",
         )
+        reviewer_detail = (
+            "IntegratorAgent 已定向修复，ReviewerAgent 正在复审。"
+            if not rerun_coders
+            else "CoderAgent 已重写，ReviewerAgent 正在复审。"
+        )
         _publish_adaptive(
             project_root,
             task_id=task_id,
             goal=goal,
             status="running",
-            detail="CoderAgent 已重写，ReviewerAgent 正在复审。",
+            detail=reviewer_detail,
             plan=plan,
             done=done_roles,
             running={"ReviewerAgent"},

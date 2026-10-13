@@ -53,33 +53,45 @@ class ReviewerAgent(BaseAgent):
         self.contracts: dict[str, tuple[str, ...]] = dict(contracts or {})
         self.last_verdict: str = "未评审"
         self.last_reasons: list[str] = []
+        # 问题只出在合并草稿结构时，只需返工 Integrator；内容类问题可能来自
+        # Coder，也可能来自合并过程，因此保守地同时返工两者。
+        self.last_issue_scope: str = "coder"
 
     def run(self, context: AgentContext, previous_results: list[AgentResult]) -> AgentResult:
         draft_paths = self._find_drafts(context)
         reasons: list[str] = []
+        coder_reasons: list[str] = []
+        integrator_reasons: list[str] = []
+        ambiguous_reasons: list[str] = []
 
         if not draft_paths:
-            reasons.append("未找到代码草稿（dev-vault/projects 下无 <任务ID>-coder-draft*.md）")
+            coder_reasons.append("未找到代码草稿（dev-vault/projects 下无 <任务ID>-coder-draft*.md）")
         for draft_path in draft_paths:
             name = draft_path.name
+            integrated = name.endswith("-integrated-draft.md")
+            target_reasons = integrator_reasons if integrated else coder_reasons
             content = draft_path.read_text(encoding="utf-8")
             draft_body = extract_ai_draft_body(content)
             stripped_len = len(draft_body.strip())
             if stripped_len < MIN_DRAFT_CHARS:
-                reasons.append(
+                (ambiguous_reasons if integrated else coder_reasons).append(
                     f"草稿 {name} 内容过短（{stripped_len} 字符 < {MIN_DRAFT_CHARS}），疑似空草稿"
                 )
             sensitive = scan_sensitive(content)
             if sensitive:
-                reasons.append(f"草稿 {name} 检测到敏感信息：" + "、".join(sensitive))
+                (ambiguous_reasons if integrated else coder_reasons).append(
+                    f"草稿 {name} 检测到敏感信息：" + "、".join(sensitive)
+                )
             vault = Path(load_config(context.project_root).main_vault_path)
             if mentions_main_vault_outside_project(content, vault, context.project_root):
-                reasons.append(f"草稿 {name} 内容引用了主知识库路径，疑似越权")
+                (ambiguous_reasons if integrated else coder_reasons).append(
+                    f"草稿 {name} 内容引用了主知识库路径，疑似越权"
+                )
             parsed = parse_draft(draft_body)
-            reasons.extend(
+            target_reasons.extend(
                 _review_draft_structure(context.project_root, name, draft_body, parsed)
             )
-            reasons.extend(_review_ownership(name, parsed, self.contracts))
+            target_reasons.extend(_review_ownership(name, parsed, self.contracts))
 
         # COMPLEX 档下合并草稿会遮蔽单份 Coder 草稿（_find_drafts 只返回合并草稿），
         # 所以这里额外按 worker 契约单独校验每一份 Coder 草稿，否则"分工"在
@@ -88,7 +100,19 @@ class ReviewerAgent(BaseAgent):
             path.name.endswith("-integrated-draft.md") for path in draft_paths
         )
         if integrated_reviewed and self.contracts:
-            reasons.extend(self._review_coder_drafts_contracts(context))
+            coder_reasons.extend(self._review_coder_drafts_contracts(context))
+
+        reasons = coder_reasons + integrator_reasons + ambiguous_reasons
+        scopes: set[str] = set()
+        if coder_reasons:
+            scopes.add("coder")
+        if integrator_reasons:
+            scopes.add("integrator")
+        if ambiguous_reasons:
+            scopes.update(("coder", "integrator"))
+        self.last_issue_scope = (
+            "mixed" if len(scopes) > 1 else next(iter(scopes), "coder")
+        )
 
         verdict = "通过" if not reasons else "需修改"
         self.last_verdict = verdict

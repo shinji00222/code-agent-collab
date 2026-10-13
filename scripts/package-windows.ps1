@@ -35,6 +35,7 @@ if (Test-Path -LiteralPath $packageDir) {
 New-Item -ItemType Directory -Path $packageDir | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $projectRoot "dist\MultiAgentWorkbench.exe") -Destination $packageDir
+Copy-Item -LiteralPath (Join-Path $projectRoot "dist\_internal") -Destination (Join-Path $packageDir "_internal") -Recurse
 Copy-Item -LiteralPath (Join-Path $projectRoot "dist\AgentWorkbench-CLI.exe") -Destination $packageDir
 Copy-Item -LiteralPath (Join-Path $projectRoot "scripts\setup-deepseek.ps1") -Destination (Join-Path $packageDir "setup-provider.ps1")
 
@@ -56,8 +57,9 @@ Quick start:
 Notes:
 - API keys are stored in Windows User environment variables.
 - API keys are not saved into this folder or the Git repository.
-- Keep MultiAgentWorkbench.exe and AgentWorkbench-CLI.exe in the same folder.
+- Keep MultiAgentWorkbench.exe, its _internal folder, and AgentWorkbench-CLI.exe together.
 - MultiAgentWorkbench.exe embeds the same local Web UI used during development. It should not open a browser tab.
+- The first launch stages the Python.NET runtime in the current Windows user's Local AppData cache so the app also works from non-ASCII project paths.
 "@
 Set-Content -LiteralPath (Join-Path $packageDir "START_HERE.txt") -Value $startHere -Encoding UTF8
 

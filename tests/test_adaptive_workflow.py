@@ -79,6 +79,32 @@ class GoodComplexProvider(AIProvider):
         return _valid_draft_text("src/example.py")
 
 
+class IntegratorOnlyRetryProvider(AIProvider):
+    """第一次只让合并草稿结构出错，确认 Fix Loop 不白跑 Coder。"""
+
+    name = "test-integrator-only-retry"
+
+    def __init__(self) -> None:
+        self.coder_calls = 0
+        self.integrator_calls = 0
+
+    def complete(self, system_prompt: str, user_prompt: str) -> str:
+        del system_prompt
+        if "几个 worker" in user_prompt:
+            return "COMPLEX"
+        if "合并成一份统一草稿" in user_prompt:
+            self.integrator_calls += 1
+            if self.integrator_calls == 1:
+                return "## 错误格式\n\n" + "仅用于触发合并结构评审。" * 12
+            return _valid_draft_text("src/integrated.py")
+        if "代码实现草稿" not in user_prompt:
+            return "模拟 AI 已收到任务：" + user_prompt
+        self.coder_calls += 1
+        if "负责的部分：测试" in user_prompt:
+            return _valid_draft_text("tests/test_example.py")
+        return _valid_draft_text("src/example.py")
+
+
 class StaticAgent:
     permission = PermissionLevel.DRAFT_WRITE
 
@@ -414,6 +440,24 @@ class AdaptiveWorkflowTests(unittest.TestCase):
                 (root / "dev-vault" / "projects").glob(f"{result.task_id}-coder-draft-*-revision1.md")
             )
             self.assertEqual(len(revision_drafts), 2)
+
+    def test_integrator_only_review_failure_does_not_rerun_coders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            provider = IntegratorOnlyRetryProvider()
+
+            with patch("code_agent_collab.orchestration.create_provider", return_value=provider):
+                result = run_adaptive_workflow(
+                    root, "用 python 和前端写一个带多个模块和接口的完整网站，拆成前后端"
+                )
+
+            roles = [item.role for item in result.agent_results]
+            self.assertEqual(provider.coder_calls, 2)
+            self.assertEqual(provider.integrator_calls, 2)
+            self.assertEqual(roles.count("CoderAgent"), 2)
+            self.assertEqual(roles.count("IntegratorAgent"), 2)
+            self.assertEqual(roles.count("ReviewerAgent"), 2)
+            self.assertIn("通过", result.agent_results[-1].summary)
 
 
 class WorkerRunLedgerTests(unittest.TestCase):

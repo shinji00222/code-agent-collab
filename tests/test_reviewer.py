@@ -104,6 +104,55 @@ class ReviewerAgentTests(unittest.TestCase):
             self.assertIn(integrated.name, result.evidence[0])
             self.assertNotIn("coder-draft", result.evidence[0])
 
+    def test_integrated_structure_issue_is_attributed_to_integrator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            _write_draft(root, _normal_content(), name=f"{TASK_ID}-coder-draft-impl.md")
+            integrated = _normal_content().replace(
+                "补充一个可验证的示例实现。",
+                f"IntegratorAgent 兜底合并说明（状态标记：{FALLBACK_MARKER}）",
+            )
+            _write_draft(root, integrated, name=f"{TASK_ID}-integrated-draft.md")
+
+            agent = ReviewerAgent(contracts={"impl": ("src/",)})
+            agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_verdict, "需修改")
+            self.assertEqual(agent.last_issue_scope, "integrator")
+
+    def test_integrated_content_issue_is_attributed_to_both_workers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            _write_draft(root, _normal_content(), name=f"{TASK_ID}-coder-draft-impl.md")
+            _write_draft(
+                root,
+                _normal_content() + "\ncontact user@example.com\n",
+                name=f"{TASK_ID}-integrated-draft.md",
+            )
+
+            agent = ReviewerAgent(contracts={"impl": ("src/",)})
+            agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_issue_scope, "mixed")
+
+    def test_coder_contract_issue_in_integrated_workflow_is_attributed_to_coder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            _write_draft(
+                root,
+                _normal_content().replace("src/example.py", "tests/test_example.py"),
+                name=f"{TASK_ID}-coder-draft-impl.md",
+            )
+            _write_draft(root, _normal_content(), name=f"{TASK_ID}-integrated-draft.md")
+
+            agent = ReviewerAgent(contracts={"impl": ("src/",)})
+            agent.run(_make_context(root), [])
+
+            self.assertEqual(agent.last_issue_scope, "coder")
+
     def test_sensitive_draft_marks_needs_fix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
