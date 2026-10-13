@@ -24,6 +24,7 @@ class WorkerRunAttempt:
     status: WorkerStatus
     input_hash: str
     output_paths: list[str]
+    output_hashes: dict[str, str]
     error: str
     result: AgentResult | None
     started_at: str
@@ -46,6 +47,7 @@ class WorkerRunRecord:
     started_at: str
     finished_at: str
     attempts: list[WorkerRunAttempt] = field(default_factory=list)
+    output_hashes: dict[str, str] = field(default_factory=dict)
 
 
 def worker_runs_path(project_root: Path, task_id: str) -> Path:
@@ -104,6 +106,10 @@ def should_skip_worker(
         return None
     if record.input_hash != input_hash:
         return None
+    if record.output_paths:
+        # Legacy cache entries without artifact hashes fail closed.
+        if not record.output_hashes or _hash_output_paths(project_root, record.output_paths) != record.output_hashes:
+            return None
     return record.result
 
 
@@ -158,6 +164,7 @@ def finish_worker_success(
         attempt=current.attempt if current else 1,
         input_hash=input_hash,
         output_paths=_output_paths(result),
+        output_hashes=_hash_output_paths(project_root, _output_paths(result)),
         error="",
         result=result,
         started_at=current.started_at if current else _now(),
@@ -216,6 +223,7 @@ def mark_worker_skipped(
         attempt=current.attempt if current else 1,
         input_hash=input_hash,
         output_paths=_output_paths(result),
+        output_hashes=_hash_output_paths(project_root, _output_paths(result)),
         error="",
         result=result,
         started_at=current.started_at if current else _now(),
@@ -254,6 +262,7 @@ def _record_to_json(record: WorkerRunRecord) -> dict:
         "attempt": record.attempt,
         "input_hash": record.input_hash,
         "output_paths": record.output_paths,
+        "output_hashes": record.output_hashes,
         "error": record.error,
         "result": _result_to_json(record.result) if record.result else None,
         "started_at": record.started_at,
@@ -273,6 +282,7 @@ def _with_attempts(record: WorkerRunRecord, attempts: list[WorkerRunAttempt]) ->
         attempt=record.attempt,
         input_hash=record.input_hash,
         output_paths=record.output_paths,
+        output_hashes=record.output_hashes,
         error=record.error,
         result=record.result,
         started_at=record.started_at,
@@ -287,6 +297,7 @@ def _attempt_from_record(record: WorkerRunRecord) -> WorkerRunAttempt:
         status=record.status,
         input_hash=record.input_hash,
         output_paths=record.output_paths,
+        output_hashes=record.output_hashes,
         error=record.error,
         result=record.result,
         started_at=record.started_at,
@@ -300,6 +311,7 @@ def _attempt_to_json(attempt: WorkerRunAttempt) -> dict:
         "status": attempt.status,
         "input_hash": attempt.input_hash,
         "output_paths": attempt.output_paths,
+        "output_hashes": attempt.output_hashes,
         "error": attempt.error,
         "result": _result_to_json(attempt.result) if attempt.result else None,
         "started_at": attempt.started_at,
@@ -315,6 +327,7 @@ def _attempt_from_json(data: dict) -> WorkerRunAttempt | None:
             status=str(data["status"]),  # type: ignore[arg-type]
             input_hash=str(data.get("input_hash", "")),
             output_paths=[str(item) for item in data.get("output_paths", [])],
+            output_hashes=_output_hashes_from_json(data),
             error=str(data.get("error", "")),
             result=_result_from_json(result_data) if isinstance(result_data, dict) else None,
             started_at=str(data.get("started_at", "")),
@@ -337,6 +350,7 @@ def _record_from_json(data: dict) -> WorkerRunRecord | None:
             attempt=int(data.get("attempt", 0)),
             input_hash=str(data.get("input_hash", "")),
             output_paths=[str(item) for item in data.get("output_paths", [])],
+            output_hashes=_output_hashes_from_json(data),
             error=str(data.get("error", "")),
             result=_result_from_json(result_data) if isinstance(result_data, dict) else None,
             started_at=str(data.get("started_at", "")),
@@ -366,6 +380,13 @@ def _result_to_json(result: AgentResult) -> dict:
     }
 
 
+def _output_hashes_from_json(data: dict) -> dict[str, str]:
+    value = data.get("output_hashes", {})
+    if not isinstance(value, dict):
+        return {}
+    return {str(path): str(digest) for path, digest in value.items()}
+
+
 def _result_from_json(data: dict) -> AgentResult:
     return AgentResult(
         role=str(data["role"]),
@@ -384,6 +405,24 @@ def _output_paths(result: AgentResult) -> list[str]:
         if "路径：" in item:
             paths.append(item.split("路径：", 1)[1])
     return paths
+
+
+def _hash_output_paths(project_root: Path, output_paths: list[str]) -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    root = project_root.resolve()
+    for raw_path in output_paths:
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = project_root / path
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(root)
+            if not resolved.is_file():
+                return {}
+            hashes[raw_path] = hashlib.sha256(resolved.read_bytes()).hexdigest()
+        except (OSError, RuntimeError, ValueError):
+            return {}
+    return hashes
 
 
 def _replace_with_retries(source: Path, target: Path) -> None:

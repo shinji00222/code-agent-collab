@@ -191,9 +191,9 @@ python -m unittest discover -s tests
 - 做什么：自适应编排在阶段内执行 worker 时，逐个记录 `running/success/failed/skipped` 状态到账本 `logs/runs/<任务ID>/workers.json`。
 - 为什么：原来的 checkpoint 主要记录“下一阶段从哪里继续”，无法精确表达同一阶段里哪个子 Agent 成功、哪个失败；并行 Coder 中 A 成功 B 失败时，重跑不应该让 A 白干第二遍。
 - 怎么做：`worker_runs.py` 提供 `start_worker_run`、`finish_worker_success`、`finish_worker_failed`、`should_skip_worker`、`mark_worker_skipped`；`orchestration.py` 用 `_run_single_worker` 包装真实 Agent 调用，先写 running，成功写 success，异常写 failed。输入 hash 基于任务目标、上下文包、角色、label；Reviewer 打回重写时额外把 revision 和反馈内容纳入 hash，避免误复用上一轮草稿。
-- 怎么恢复：某一阶段部分失败时，主控保留已成功 worker 的 `AgentResult`，把 checkpoint 的 `next_stage_index` 保持为当前阶段；下次 `approve <任务ID>` 重新进入同一阶段，账本中同输入已成功的 worker 会标记为 `skipped` 并复用结果，只补跑失败或缺失 worker。
+- 怎么恢复：某一阶段部分失败时，主控保留已成功 worker 的 `AgentResult`，把 checkpoint 的 `next_stage_index` 保持为当前阶段；下次 `approve <任务ID>` 重新进入同一阶段，账本中同输入且输出文件哈希仍匹配的 worker 会标记为 `skipped` 并复用结果，只补跑失败或失效 worker。`workers.json` 的 `output_hashes` 记录输出文件 SHA-256；旧记录没有该字段时，带输出的成功缓存会失效并安全重跑。
 - 怎么验证：`tests/test_adaptive_workflow.py::WorkerRunLedgerTests` 模拟两个并行 Coder：模块A 成功、模块B 失败；第二次运行时模块A 的失败替身不会被调用，模块B 正常补跑，账本状态从 `success/failed` 变为 `skipped/success`。
-- 常见坑：并行 worker 会同时写同一个账本文件，Windows 下只靠 `.tmp` + `os.replace` 仍可能遇到文件占用；必须用进程内锁串行化账本写入，并给临时文件使用线程独立名称。`skipped` 也要被视为可复用状态，否则第一次跳过后下一次会失去缓存效果。当前账本是本地单进程内安全，不等于多进程/多机器分布式锁。
+- 常见坑：并行 worker 会同时写同一个账本文件，Windows 下只靠 `.tmp` + `os.replace` 仍可能遇到文件占用；必须用进程内锁串行化账本写入，并给临时文件使用线程独立名称。`skipped` 也要被视为可复用状态，否则第一次跳过后下一次会失去缓存效果。输出哈希只校验声明的项目内文件，不代表模型配置、提示词版本和全部源码依赖都进入缓存键。当前账本是本地单进程内安全，不等于多进程/多机器分布式锁。
 
 ## 18. 进度快照任务级简单隔离
 

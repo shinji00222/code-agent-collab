@@ -1,5 +1,18 @@
 # 更新日志
 
+## v0.17.17 - 2026-10-13（Worker 缓存产物校验修复版）
+
+### 修复：缓存复用前核对 Worker 产物
+
+- Worker 成功记录现在保存项目内输出文件的 SHA-256；复用缓存前确认产物仍存在、内容未变且仍位于项目目录内。
+- 缺少产物、产物被修改、路径越界或旧账本缺少哈希时，该 Worker 会重跑，避免复用失效结果。
+- WorkerRun JSON 新增可选 `output_hashes` 字段；旧账本仍可读取，但旧的带输出缓存会安全失效一次。
+- 版本说明：修复版 `v0.17.17`，适用 Windows 本地工作台；不改变命令接口，旧账本可读取，带输出的旧缓存会重新执行一次。
+- 升级：使用 `AgentWorkbench-v0.17.17-windows.zip` 中的桌面 EXE、同级 `_internal` 与 CLI 一起替换旧文件；保持三者同目录。
+- 验证：定向 `python scripts/run-tests.py test_adaptive_workflow` **17 项 OK**；全量测试 **297 项 OK**；Windows zip 已重新构建。当前这次重建后的 EXE 尚未取得启动/首页/正常关窗证据，故本版本暂不标为可发布。
+- 剩余限制：模型/provider 配置与提示词版本仍未纳入输入 hash；这部分继续保留在问题台账。
+- 已知风险：缓存键目前仍未包含模型/provider 配置、提示词版本、相关源码和上游产物摘要；WebView 桌面窗口依赖 Windows WebView2 Runtime。
+
 ## v0.17.16 - 2026-10-13（Windows 桌面启动修复版）
 
 ### 修复：重建过期的 Windows 桌面包

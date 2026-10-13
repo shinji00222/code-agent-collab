@@ -30,7 +30,13 @@ from code_agent_collab.orchestration import (
 )
 from code_agent_collab.providers import AIProvider
 from code_agent_collab.task_log import task_log_path
-from code_agent_collab.worker_runs import load_worker_runs, worker_runs_path
+from code_agent_collab.worker_runs import (
+    finish_worker_success,
+    load_worker_runs,
+    should_skip_worker,
+    start_worker_run,
+    worker_runs_path,
+)
 
 
 class ShortThenGoodProvider(AIProvider):
@@ -116,11 +122,14 @@ class StaticAgent:
     def run(self, context: AgentContext, previous_results: list[AgentResult]) -> AgentResult:
         del previous_results
         self.calls += 1
+        output_path = context.project_root / "dev-vault" / "projects" / (self.name + ".md")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(f"{self.name} 的测试产物", encoding="utf-8")
         return AgentResult(
             role=self.role,
             permission=self.permission,
             summary=f"{self.name} 完成",
-            evidence=[f"草稿路径：{context.project_root / 'dev-vault' / 'projects' / (self.name + '.md')}"],
+            evidence=[f"草稿路径：{output_path}"],
             outputs=[self.name],
         )
 
@@ -461,6 +470,73 @@ class AdaptiveWorkflowTests(unittest.TestCase):
 
 
 class WorkerRunLedgerTests(unittest.TestCase):
+    def test_worker_cache_requires_unchanged_existing_output_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            spec = WorkerSpec("CoderAgent", "模块A")
+            output = root / "dev-vault" / "projects" / "module-a.md"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text("原始产物", encoding="utf-8")
+            result = AgentResult(
+                role="CoderAgent",
+                permission=PermissionLevel.DRAFT_WRITE,
+                summary="模块A 完成",
+                evidence=[f"草稿路径：{output}"],
+            )
+            start_worker_run(root, task_id="task-cache", stage_index=1, spec=spec, input_hash="same-input")
+            finish_worker_success(
+                root, task_id="task-cache", stage_index=1, spec=spec, input_hash="same-input", result=result
+            )
+
+            self.assertEqual(
+                should_skip_worker(root, task_id="task-cache", stage_index=1, spec=spec, input_hash="same-input"),
+                result,
+            )
+            output.write_text("被手动改过", encoding="utf-8")
+            self.assertIsNone(
+                should_skip_worker(root, task_id="task-cache", stage_index=1, spec=spec, input_hash="same-input")
+            )
+            output.unlink()
+            self.assertIsNone(
+                should_skip_worker(root, task_id="task-cache", stage_index=1, spec=spec, input_hash="same-input")
+            )
+            output.write_text("原始产物", encoding="utf-8")
+            ledger_path = worker_runs_path(root, "task-cache")
+            payload = json.loads(ledger_path.read_text(encoding="utf-8"))
+            payload["workers"][0].pop("output_hashes")
+            ledger_path.write_text(json.dumps(payload), encoding="utf-8")
+            self.assertIsNone(
+                should_skip_worker(root, task_id="task-cache", stage_index=1, spec=spec, input_hash="same-input")
+            )
+            payload["workers"][0]["output_hashes"] = []
+            ledger_path.write_text(json.dumps(payload), encoding="utf-8")
+            self.assertIsNone(
+                should_skip_worker(root, task_id="task-cache", stage_index=1, spec=spec, input_hash="same-input")
+            )
+
+    def test_worker_cache_does_not_hash_or_reuse_outputs_outside_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            output = Path(tmp) / "external.md"
+            output.write_text("external", encoding="utf-8")
+            spec = WorkerSpec("CoderAgent", "外部输出")
+            result = AgentResult(
+                role="CoderAgent",
+                permission=PermissionLevel.DRAFT_WRITE,
+                summary="外部输出",
+                evidence=[f"草稿路径：{output}"],
+            )
+            start_worker_run(root, task_id="task-outside", stage_index=1, spec=spec, input_hash="same-input")
+            finish_worker_success(
+                root, task_id="task-outside", stage_index=1, spec=spec, input_hash="same-input", result=result
+            )
+
+            record = load_worker_runs(root, "task-outside")["stage1-CoderAgent-外部输出"]
+            self.assertEqual(record.output_hashes, {})
+            self.assertIsNone(
+                should_skip_worker(root, task_id="task-outside", stage_index=1, spec=spec, input_hash="same-input")
+            )
+
     def test_worker_run_ledger_skips_success_and_retries_failed_worker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_project(tmp)
