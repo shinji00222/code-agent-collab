@@ -587,4 +587,15 @@ python -m unittest discover -s tests
 - 怎么验证：模块 smoke check 成功；最终打包 EXE 标题为“多Agent工作台”、窗口响应正常，首页 HTTP 200 且包含 `/api/jobs` 与 `pollJob`；通过 `CloseMainWindow()` 关闭后进程退出、8765 端口释放；全量测试 295 项 OK。
 - 常见坑：PyInstaller 构建和 zip 生成成功不代表桌面版能启动；要用最终压缩包中的 EXE 在中文项目路径实测窗口、HTTP 和关窗清理。不要绕过 SmartScreen。
 
+## 54. Single vs Multi-Agent benchmark（v0.18.0 开发版）
+
+- 做什么：运行 `python -m code_agent_collab.cli benchmark`，在相同的固定任务集上比较单次 Coder 草稿与自适应多 Agent coding loop。
+- 为什么：Evaluation 需要保存可复核的逐任务结果，不能只凭“看起来更聪明”评价多 Agent。
+- 怎么做：每个 task/mode 使用独立临时项目；运行后从草稿解析改动，并调用既有隔离测试副本逻辑；摘要和 JSONL 原始记录写入 `logs/benchmarks/<run>/`，该目录由 `.gitignore` 排除。指标含 retry、Provider 调用数与 Reviewer 拒绝数。
+- 怎么验证：`python scripts/run-tests.py test_benchmark` → 4 项 OK；`python scripts/run-tests.py` → 301 项 OK；再运行 `python -m code_agent_collab.cli benchmark`，核对每条任务均有成功、测试、估算 token、耗时、调用数和 reviewer 结果字段。
+- 常见坑：
+  1. Mock Provider 的固定 `answer() -> 42` 草稿不实现 benchmark 任务，mock 跑出 0/2 是 harness 失败记录示例，不能当成模型对比结论。
+  2. token 依据输入/输出字符数除以 4 估算；Provider 没返回 `usage`，不得写成实际 token 或费用。
+  3. 真实模型对比需先配置 Provider；结果仍受模型版本、温度、任务集规模和重复次数影响。
+
 

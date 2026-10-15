@@ -19,7 +19,7 @@ This project is not about adding more agents for show. The main goal is to make 
 
 ## Current Status
 
-Current version: `v0.17.16`
+Current version: `v0.18.0` (development; not released)
 
 Current direction: **Stable Coding Loop -> Hierarchical Context -> Evaluation**.
 
@@ -35,15 +35,18 @@ cd code-agent-collab
 $env:PYTHONPATH="src"
 python -m code_agent_collab.cli provider
 python -m code_agent_collab.cli coding-loop "add a tiny test"
+python -m code_agent_collab.cli benchmark
 ```
 
-The command above runs in dry-run mode and previews the proposed change. To apply a reviewed draft, run:
+The `coding-loop` command above runs in dry-run mode and previews the proposed change. The benchmark command runs its fixed tasks and tests in temporary projects. To apply a reviewed draft, run:
 
 ```powershell
 python -m code_agent_collab.cli coding-loop "add a tiny test" --apply
 ```
 
 By default, the project uses the local `mock` provider. Configure DeepSeek, OpenAI, or an OpenAI-compatible provider only when you want real model calls.
+
+`benchmark` compares a one-shot Coder with the adaptive multi-agent coding loop on the same isolated tasks. It writes a Markdown summary and JSONL run records under `logs/benchmarks/`; changes are tested in temporary copies and never applied to the working project. Token counts are estimates based on text length, not provider billing usage. Use a configured real provider for model-quality comparisons; `mock` only checks the harness and pipeline overhead.
 
 ## Main Commands
 
@@ -56,6 +59,7 @@ python -m code_agent_collab.cli plans
 python -m code_agent_collab.cli approve "task id or keyword"
 python -m code_agent_collab.cli apply-draft "task id or keyword"
 python -m code_agent_collab.cli coding-loop "task goal" [--apply]
+python -m code_agent_collab.cli benchmark [--mode single|multi|both]
 python -m code_agent_collab.webui
 python -m code_agent_collab.desktop
 ```

@@ -66,7 +66,7 @@
 | --- | --- | --- | --- |
 | **v0.16** | Stable Coding Loop | 修核心 bug，把 Planner / Coder / Reviewer、自动 test、retry、防死循环跑稳 | 至少一个本地样例能从任务到 patch/diff 闭环；失败能停在可解释状态，不无限循环 |
 | **v0.17** | Hierarchical Context | 已先落地项目文档 + 代码文件 context selection、token 预算和 Coder 上下文包摘录；后续补全局 / repo / module / task / agent memory | 每次任务能说明选了哪些上下文、为什么选、token 大约用了多少 |
-| **v0.18** | Evaluation | 建 benchmark 和指标记录 | 能跑 Single Agent vs Multi-Agent 对照，输出成功率、token、latency、测试通过率、Reviewer 驳回次数 |
+| **v0.18** | Evaluation | 已有两项隔离任务、Single Coder vs Multi-Agent CLI 和 JSONL/Markdown 记录；待真实 Provider 对照与扩大任务集 | 能跑可复核的 Single Agent vs Multi-Agent 对照，输出成功率、token、latency、测试通过率、Reviewer 驳回次数；真实 usage 与基准稳定性待补 |
 | **v0.19** | Execution Sandbox Hardening | 把轻隔离、临时副本执行和命令安全边界做扎实 | 测试失败不污染正式仓库；命令有白名单、超时、输出上限和密钥剥离；重型沙箱只按需评估 |
 
 > 注意：用户口头说的 v0.2 / v0.3 / v0.4 是"产品路线阶段名"；本仓库真实版本已经到 v0.15.x，所以落到当前仓库时顺延为 v0.16 / v0.17 / v0.18。

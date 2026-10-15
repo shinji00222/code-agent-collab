@@ -19,7 +19,7 @@
 
 ## 当前状态
 
-当前版本：`v0.17.16`
+当前版本：`v0.18.0`（开发版，尚未发布）
 
 当前主线：**Stable Coding Loop -> Hierarchical Context -> Evaluation**。
 
@@ -35,15 +35,18 @@ cd code-agent-collab
 $env:PYTHONPATH="src"
 python -m code_agent_collab.cli provider
 python -m code_agent_collab.cli coding-loop "add a tiny test"
+python -m code_agent_collab.cli benchmark
 ```
 
-上面的命令默认是 dry-run，只预览建议改动。确认要应用通过审查的草稿时，再运行：
+上面的 `coding-loop` 命令默认是 dry-run，只预览建议改动；`benchmark` 会在临时项目里运行固定任务和测试。确认要应用通过审查的草稿时，再运行：
 
 ```powershell
 python -m code_agent_collab.cli coding-loop "add a tiny test" --apply
 ```
 
 项目默认使用本地 `mock` provider。只有你想接真实模型时，才需要配置 DeepSeek、OpenAI 或 OpenAI-compatible provider。
+
+`benchmark` 用同一组小型编码任务对比单 Agent 与自适应多 Agent 流程，生成 Markdown 汇总和 JSONL 原始记录到 `logs/benchmarks/`。每个任务都在临时项目里运行，改动只进入隔离测试副本，不会应用到当前仓库。token 数按输入/输出字符粗略估算，不等于 Provider 账单用量；默认 `mock` 只验证评测流程和编排开销，要比较模型质量需先配置真实 Provider。
 
 ## 常用命令
 
@@ -56,6 +59,7 @@ python -m code_agent_collab.cli plans
 python -m code_agent_collab.cli approve "任务ID或关键词"
 python -m code_agent_collab.cli apply-draft "任务ID或关键词"
 python -m code_agent_collab.cli coding-loop "任务目标" [--apply]
+python -m code_agent_collab.cli benchmark [--mode single|multi|both]
 python -m code_agent_collab.webui
 python -m code_agent_collab.desktop
 ```

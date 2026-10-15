@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .config import save_default_config
+from .benchmark import run_benchmark
 from .control import WorkflowPaused, clear_pause_request
 from .context_pack import create_context_pack
 from .coding_loop import run_coding_loop
@@ -193,6 +194,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "--project-root",
         default=".",
         help="Project root. Defaults to current directory.",
+    )
+
+    benchmark_parser = subparsers.add_parser(
+        "benchmark", help="Compare single-agent and multi-agent coding on isolated tasks."
+    )
+    benchmark_parser.add_argument(
+        "--mode", choices=("single", "multi", "both"), default="both",
+        help="Run one approach or both (default: both).",
+    )
+    benchmark_parser.add_argument(
+        "--output", default="logs/benchmarks",
+        help="Report directory relative to the project root.",
     )
 
     subparsers.add_parser("provider", help="Show the active AI provider configuration.")
@@ -497,6 +510,15 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"[应用前检查] {'成功' if result.ok else '失败'}：{result.message}")
         return 0 if result.ok else 1
+
+    if args.command == "benchmark":
+        modes = ("single", "multi") if args.mode == "both" else (args.mode,)
+        report = run_benchmark(
+            project_root / args.output, project_root=project_root, modes=modes
+        )
+        print(f"Benchmark 完成：{report}")
+        print("token 指标按字符数估算，不代表 Provider 账单 usage。")
+        return 0
 
     if args.command == "mcp":
         return _run_mcp_command(args, project_root)

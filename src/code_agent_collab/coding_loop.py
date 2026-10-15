@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .apply import ApplyResult, apply_draft_workflow, find_draft_path
 from .orchestration import AdaptiveWorkflowResult, run_adaptive_workflow
+from .providers import AIProvider
 
 MAX_APPLY_RETRIES = 1
 RETRYABLE_APPLY_STAGES = {"隔离测试", "正式测试"}
@@ -28,7 +29,13 @@ class CodingLoopResult:
     attempts: list[CodingLoopAttempt]
 
 
-def run_coding_loop(project_root: Path, goal: str, apply: bool = False) -> CodingLoopResult:
+def run_coding_loop(
+    project_root: Path,
+    goal: str,
+    apply: bool = False,
+    *,
+    provider: AIProvider | None = None,
+) -> CodingLoopResult:
     """Run the minimal coding loop: plan -> workers -> review -> diff/apply.
 
     The default is still safe: it stops at a diff preview. Passing apply=True reuses the
@@ -38,7 +45,11 @@ def run_coding_loop(project_root: Path, goal: str, apply: bool = False) -> Codin
     attempts: list[CodingLoopAttempt] = []
     next_goal = goal
     for attempt_index in range(MAX_APPLY_RETRIES + 1):
-        workflow = run_adaptive_workflow(project_root, next_goal)
+        workflow = (
+            run_adaptive_workflow(project_root, next_goal)
+            if provider is None
+            else run_adaptive_workflow(project_root, next_goal, provider=provider)
+        )
         if not _latest_reviewer_passed(workflow):
             message = "ReviewerAgent 未通过或没有产生通过结论，已停止在应用前。"
             attempts.append(CodingLoopAttempt(workflow, None, None, message))

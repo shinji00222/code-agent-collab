@@ -1,5 +1,16 @@
 # 更新日志
 
+## v0.18.0 - 2026-10-15（Evaluation benchmark 开发版）
+
+- 分类：Evaluation 阶段开发版；尚未创建 tag、推送或发布。
+- 新增 `benchmark` 命令，用同一组隔离编码任务比较单 Coder 与自适应多 Agent coding loop。
+- 汇总成功率、隔离测试通过率、估算 token、耗时、改动文件数、重试数、Provider 调用数与 Reviewer 驳回数；逐次 JSONL 保存原始结果。
+- 每项任务在临时项目运行，草稿只在测试隔离副本中验证，不写入当前项目源码。
+- token 指标明确标为字符数估算；mock 结果只验证 harness，不代表真实模型质量。真实 Provider 的有效对比尚待配置后运行。
+- 兼容性：新增 CLI 子命令和可注入 Provider 参数；既有命令默认行为不变。
+- 验证：benchmark 专项 4 项、全量 `python scripts/run-tests.py` 共 **301 项通过**；`py_compile` 和默认 mock benchmark 命令通过。mock 的任务预期失败，因其固定演示回复不实现 benchmark 任务。
+- 已知限制：内置任务集目前只有 2 项；Provider 接口未返回厂商 usage，token 为估算；尚未完成真实模型对照。
+
 ## v0.17.17 - 2026-10-13（Worker 缓存产物校验修复版）
 
 ### 修复：缓存复用前核对 Worker 产物

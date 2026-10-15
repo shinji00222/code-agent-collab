@@ -778,7 +778,9 @@ def _write_adaptive_log(
     return output_path
 
 
-def create_adaptive_plan(project_root: Path, goal: str) -> AdaptivePlanResult:
+def create_adaptive_plan(
+    project_root: Path, goal: str, *, provider: AIProvider | None = None
+) -> AdaptivePlanResult:
     """第一阶段：生成上下文包 + 主控产出执行方案，写入 logs/plans，等待人工审批。"""
     context_pack = create_context_pack(project_root, goal)
     _publish_adaptive(
@@ -797,7 +799,7 @@ def create_adaptive_plan(project_root: Path, goal: str) -> AdaptivePlanResult:
         task_id=context_pack.task_id,
         context_pack_path=context_pack.output_path,
     )
-    provider = create_provider()
+    provider = provider or create_provider()
     orchestrator = OrchestratorAgent(provider=provider)
     orchestrator_result = orchestrator.run(context, [])
     plan = orchestrator.last_plan
@@ -1000,7 +1002,9 @@ def _run_reviewer_fix_loop(
     return reviewer
 
 
-def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResult:
+def execute_adaptive_plan(
+    project_root: Path, task: str, *, provider: AIProvider | None = None
+) -> AdaptiveWorkflowResult:
     """第二阶段：人工审批通过后，按已保存的计划执行 workers（阶段内并行）。"""
     plan_path = find_plan_path(project_root, task)
     data = json.loads(plan_path.read_text(encoding="utf-8"))
@@ -1017,7 +1021,7 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
         task_id=task_id,
         context_pack_path=context_pack_path,
     )
-    provider = create_provider()
+    provider = provider or create_provider()
     orchestrator_result = AgentResult(
         role="OrchestratorAgent",
         permission=PermissionLevel.READ_ONLY,
@@ -1223,11 +1227,21 @@ def execute_adaptive_plan(project_root: Path, task: str) -> AdaptiveWorkflowResu
     )
 
 
-def run_adaptive_workflow(project_root: Path, goal: str) -> AdaptiveWorkflowResult:
+def run_adaptive_workflow(
+    project_root: Path, goal: str, *, provider: AIProvider | None = None
+) -> AdaptiveWorkflowResult:
     """程序化便捷入口：出计划 + 立即执行（不经过人工审批）。
 
     注意：CLI 的 run-adaptive 使用两阶段流程（create_adaptive_plan → 人工 approve），
     本函数仅供测试与脚本使用，避免在真实使用路径上绕过人工审批闸门。
     """
-    plan_result = create_adaptive_plan(project_root, goal)
-    return execute_adaptive_plan(project_root, plan_result.task_id)
+    plan_result = (
+        create_adaptive_plan(project_root, goal)
+        if provider is None
+        else create_adaptive_plan(project_root, goal, provider=provider)
+    )
+    return (
+        execute_adaptive_plan(project_root, plan_result.task_id)
+        if provider is None
+        else execute_adaptive_plan(project_root, plan_result.task_id, provider=provider)
+    )
