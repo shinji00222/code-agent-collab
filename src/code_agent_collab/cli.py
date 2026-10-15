@@ -22,6 +22,7 @@ from .mcp_bridge import (
 )
 from .orchestration import create_adaptive_plan, execute_adaptive_plan, list_adaptive_plans
 from .apply import apply_draft_workflow, find_draft_path
+from .permissions import PermissionDenied
 from .reflection import create_reflection, list_pending_notes
 from .providers import SUPPORTED_PROVIDERS, ProviderConfig, create_provider
 from .review import (
@@ -206,6 +207,10 @@ def _build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument(
         "--output", default="logs/benchmarks",
         help="Report directory relative to the project root.",
+    )
+    benchmark_parser.add_argument(
+        "--repeats", type=int, default=1,
+        help="Independent runs per task and mode (default: 1).",
     )
 
     subparsers.add_parser("provider", help="Show the active AI provider configuration.")
@@ -513,11 +518,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "benchmark":
         modes = ("single", "multi") if args.mode == "both" else (args.mode,)
-        report = run_benchmark(
-            project_root / args.output, project_root=project_root, modes=modes
-        )
+        try:
+            report = run_benchmark(
+                project_root / args.output,
+                project_root=project_root,
+                modes=modes,
+                repeats=args.repeats,
+            )
+        except (PermissionDenied, ValueError) as exc:
+            print(f"Benchmark 参数无效：{exc}")
+            return 2
         print(f"Benchmark 完成：{report}")
-        print("token 指标按字符数估算，不代表 Provider 账单 usage。")
+        print("token 优先使用 Provider 响应 usage；没有时按字符数估算，不等于完整账单用量。")
         return 0
 
     if args.command == "mcp":

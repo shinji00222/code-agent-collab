@@ -122,6 +122,20 @@ class ProviderTests(unittest.TestCase):
             with patch("code_agent_collab.providers.request.urlopen", return_value=FakeResponse(payload)):
                 self.assertEqual(_provider().complete("system", "user"), "ok")
 
+    def test_real_provider_returns_reported_token_usage(self) -> None:
+        payload = (
+            b'{"choices":[{"message":{"content":"ok"}}],'
+            b'"usage":{"prompt_tokens":13,"completion_tokens":5,"total_tokens":18}}'
+        )
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"}, clear=True):
+            with patch("code_agent_collab.providers.request.urlopen", return_value=FakeResponse(payload)):
+                content, usage = _provider().complete_with_usage("system", "user")
+        self.assertEqual(content, "ok")
+        self.assertEqual(
+            usage,
+            {"input_tokens": 13, "output_tokens": 5, "total_tokens": 18},
+        )
+
     def test_real_provider_rejects_prompt_over_budget_before_network_call(self) -> None:
         provider = OpenAICompatibleProvider(
             ProviderConfig(

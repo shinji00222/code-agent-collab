@@ -589,13 +589,20 @@ python -m unittest discover -s tests
 
 ## 54. Single vs Multi-Agent benchmark（v0.18.0 开发版）
 
-- 做什么：运行 `python -m code_agent_collab.cli benchmark`，在相同的固定任务集上比较单次 Coder 草稿与自适应多 Agent coding loop。
+- 做什么：运行 `python -m code_agent_collab.cli benchmark --repeats 3`，在相同的 10 项固定任务上多轮比较单次 Coder 草稿与自适应多 Agent coding loop。
 - 为什么：Evaluation 需要保存可复核的逐任务结果，不能只凭“看起来更聪明”评价多 Agent。
-- 怎么做：每个 task/mode 使用独立临时项目；运行后从草稿解析改动，并调用既有隔离测试副本逻辑；摘要和 JSONL 原始记录写入 `logs/benchmarks/<run>/`，该目录由 `.gitignore` 排除。指标含 retry、Provider 调用数与 Reviewer 拒绝数。
-- 怎么验证：`python scripts/run-tests.py test_benchmark` → 4 项 OK；`python scripts/run-tests.py` → 301 项 OK；再运行 `python -m code_agent_collab.cli benchmark`，核对每条任务均有成功、测试、估算 token、耗时、调用数和 reviewer 结果字段。
+- 怎么做：每个 task/repeat/mode 使用独立临时项目；只把 `src/solution.py` 应用到隔离副本，避免模型改写固定测试夹具；其他路径的改动会被忽略并计数。摘要和 JSONL 写入 `logs/benchmarks/<run>/`，该目录由 `.gitignore` 排除。优先保存 Provider 返回 usage；缺失时才估算 token。
+- 怎么验证：`python scripts/run-tests.py test_providers test_benchmark` → 22 项 OK；全量 `python scripts/run-tests.py` → 306 项 OK；DeepSeek `deepseek-chat` v1.3 生成 60 条记录，单 Agent / 多 Agent 均 30/30；平均 768.0 / 1,935.2 tokens、3.203 / 4.832 秒。
 - 常见坑：
-  1. Mock Provider 的固定 `answer() -> 42` 草稿不实现 benchmark 任务，mock 跑出 0/2 是 harness 失败记录示例，不能当成模型对比结论。
-  2. token 依据输入/输出字符数除以 4 估算；Provider 没返回 `usage`，不得写成实际 token 或费用。
-  3. 真实模型对比需先配置 Provider；结果仍受模型版本、温度、任务集规模和重复次数影响。
+  1. Mock Provider 的固定 `answer() -> 42` 草稿不实现 benchmark 任务，mock 结果不能当成模型对比结论。
+  2. 题目描述和断言必须逐项一致；评测器只接受 `src/solution.py`，其余模型改动不能覆盖固定测试。
+  3. Provider usage 不保证包括失败或重试请求的所有计费。
+  4. 这次小型纯函数集上两种模式都 100%，多 Agent 使用更多 token、时间；不能外推到复杂仓库任务。
 
 
+### DeepSeek 真实评测的本机密钥输入
+
+- 做什么：在 Windows 本机运行 `powershell -ExecutionPolicy Bypass -File scripts/run-deepseek-benchmark.ps1`，隐藏输入新生成的 API Key，执行 10 项任务、两种模式、3 轮评测。
+- 为什么：避免把密钥放进聊天、命令行参数、仓库或报告；环境变量只在当前 PowerShell 进程中临时设置。
+- 怎么验证：确认命令输出的报告路径位于 `logs/benchmarks/`，包含 60 条 JSONL 记录；结束后检查 `$env:DEEPSEEK_API_KEY` 已恢复到运行前状态。
+- 常见坑：评测会产生真实 API 调用和费用；响应 usage 可能不包括失败或重试请求的全部计费。密钥曾出现在聊天中时应先在服务商后台撤销并换新，再通过隐藏提示输入。

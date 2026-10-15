@@ -3,14 +3,14 @@
 ## v0.18.0 - 2026-10-15（Evaluation benchmark 开发版）
 
 - 分类：Evaluation 阶段开发版；尚未创建 tag、推送或发布。
-- 新增 `benchmark` 命令，用同一组隔离编码任务比较单 Coder 与自适应多 Agent coding loop。
-- 汇总成功率、隔离测试通过率、估算 token、耗时、改动文件数、重试数、Provider 调用数与 Reviewer 驳回数；逐次 JSONL 保存原始结果。
-- 每项任务在临时项目运行，草稿只在测试隔离副本中验证，不写入当前项目源码。
-- token 指标明确标为字符数估算；mock 结果只验证 harness，不代表真实模型质量。真实 Provider 的有效对比尚待配置后运行。
+- 新增 `benchmark` 命令，用同一组 10 项隔离编码任务比较单 Coder 与自适应多 Agent coding loop，支持 `--repeats` 多轮独立采样。
+- 汇总成功率、隔离测试通过率、Provider usage 或字符估算 token、耗时、改动/忽略文件数、重试数、Provider 调用数与 Reviewer 驳回数；逐次 JSONL 保存原始结果。
+- 每项任务在临时项目运行，只把 `src/solution.py` 纳入隔离测试；模型草稿里的测试文件和其他路径不会覆盖固定测试夹具，并会计入忽略文件数。
+- Provider 返回 usage 时记录响应 token 数，没有 usage 时才按字符数估算；响应 usage 不保证涵盖重试请求的全部计费。Windows 可运行 `scripts/run-deepseek-benchmark.ps1`，在隐藏提示中输入密钥，密钥仅用于当前进程。
+- 真实对照：DeepSeek `deepseek-chat`，benchmark v1.3，10 项任务 × 2 模式 × 3 轮，共 60 条记录；单 Agent 30/30，多 Agent 30/30。平均 usage 为 768.0 vs 1,935.2 tokens，平均耗时 3.203s vs 4.832s；多 Agent 一次提出了额外文件并被评测器忽略。该结果只适用于当前轻量纯函数任务集。
 - 兼容性：新增 CLI 子命令和可注入 Provider 参数；既有命令默认行为不变。
-- 验证：benchmark 专项 4 项、全量 `python scripts/run-tests.py` 共 **301 项通过**；`py_compile` 和默认 mock benchmark 命令通过。mock 的任务预期失败，因其固定演示回复不实现 benchmark 任务。
-- 已知限制：内置任务集目前只有 2 项；Provider 接口未返回厂商 usage，token 为估算；尚未完成真实模型对照。
-
+- 验证：Provider + benchmark 专项 **22 项通过**、全量 `python scripts/run-tests.py` 共 **306 项通过**；真实记录均为 Provider usage。版本仍为开发版，尚未创建 tag、推送或发布。
+- 已知限制：任务集是轻量纯函数任务，不代表大型仓库改造；Provider 响应 usage 不一定等于最终账单用量。
 ## v0.17.17 - 2026-10-13（Worker 缓存产物校验修复版）
 
 ### 修复：缓存复用前核对 Worker 产物

@@ -68,6 +68,12 @@ class AIProvider:
     def complete(self, system_prompt: str, user_prompt: str) -> str:
         raise NotImplementedError
 
+    def complete_with_usage(
+        self, system_prompt: str, user_prompt: str
+    ) -> tuple[str, dict[str, int] | None]:
+        """Complete a prompt and optionally return provider-reported token usage."""
+        return self.complete(system_prompt, user_prompt), None
+
 
 class ProviderConfigurationError(ValueError):
     """Raised when a real Provider is missing required local configuration."""
@@ -105,6 +111,12 @@ class OpenAICompatibleProvider(AIProvider):
         self.name = config.name or "openai-compatible"
 
     def complete(self, system_prompt: str, user_prompt: str) -> str:
+        content, _ = self.complete_with_usage(system_prompt, user_prompt)
+        return content
+
+    def complete_with_usage(
+        self, system_prompt: str, user_prompt: str
+    ) -> tuple[str, dict[str, int] | None]:
         self._check_prompt_budget(system_prompt, user_prompt)
         if not self.config.base_url:
             raise ProviderConfigurationError(
@@ -141,7 +153,7 @@ class OpenAICompatibleProvider(AIProvider):
             method="POST",
         )
         result = self._request_with_retries(http_request)
-        return _extract_chat_content(result)
+        return _extract_chat_content(result), _extract_usage(result)
 
     def _check_prompt_budget(self, system_prompt: str, user_prompt: str) -> None:
         total_chars = len(system_prompt) + len(user_prompt)
@@ -186,6 +198,30 @@ def _extract_chat_content(result: dict) -> str:
     if not isinstance(content, str) or not content.strip():
         raise ProviderCallError("Provider 返回内容为空")
     return content
+
+
+def _extract_usage(result: dict) -> dict[str, int] | None:
+    """Read standard OpenAI-compatible usage fields without requiring them."""
+    usage = result.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    prompt = usage.get("prompt_tokens", usage.get("input_tokens"))
+    completion = usage.get("completion_tokens", usage.get("output_tokens"))
+    total = usage.get("total_tokens")
+    valid_prompt = type(prompt) is int and prompt >= 0
+    valid_completion = type(completion) is int and completion >= 0
+    valid_total = type(total) is int and total >= 0
+    if not valid_total and valid_prompt and valid_completion:
+        total = prompt + completion
+        valid_total = True
+    if not valid_total:
+        return None
+    result_usage = {"total_tokens": total}
+    if valid_prompt:
+        result_usage["input_tokens"] = prompt
+    if valid_completion:
+        result_usage["output_tokens"] = completion
+    return result_usage
 
 
 def create_provider(config: ProviderConfig | None = None) -> AIProvider:

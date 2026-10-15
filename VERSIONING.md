@@ -18,8 +18,7 @@
 
 ### v0.18.0 开发版门槛（2026-10-15）
 
-分类为 Evaluation 阶段开发版，尚未发布。`benchmark` 可用同一组任务比较单 Coder 和自适应多 Agent 流程，报告成功率、隔离测试、调用数、耗时、改动文件数、重试数、Reviewer 驳回和按字符估算的 token；任务运行在临时项目，测试只在隔离副本里应用草稿。专项 4 项与全量 301 项测试通过，源码编译和默认 mock benchmark 命令已运行；mock 固定回复不实现任务，因此这轮 0/2 通过只证明失败能被记录，不证明真实模型优劣。真实 Provider 对照、更多基准任务和真实 usage 接入仍待完成；不得据此对外宣称模型评测结论。
-
+分类为 Evaluation 阶段开发版，尚未发布。`benchmark` 用固定的 10 项任务、独立重复次数比较单 Coder 和自适应多 Agent 流程，记录成功率、隔离测试、调用数、耗时、改动/忽略文件数、重试数、Reviewer 驳回和 token；优先用 Provider 响应 usage，无 usage 时标记字符估算。每项只把 `src/solution.py` 应用到隔离副本，固定测试夹具不会被模型草稿覆盖。DeepSeek `deepseek-chat` 的 benchmark v1.3 共 60 条真实记录：单 Agent 30/30、多 Agent 30/30；平均 usage 为 768.0 vs 1,935.2 tokens，平均耗时 3.203s vs 4.832s。Provider + benchmark 专项 22 项、全量 306 项测试通过。当前仍是开发版，不打 tag、不推送；任务集是小型纯函数，结果不能外推到大型仓库改造。
 ### v0.17.16 发布门槛（2026-10-13）
 
 分类为 Windows 桌面启动修复版，升级方式和兼容性说明见 `CHANGELOG.md`。全量测试 295 项通过；最终 onedir 包已实测窗口、HTTP 首页和正常关窗释放端口。已发布：tag `v0.17.16`，远端 main 与附注 tag 均指向 `b91999f`。

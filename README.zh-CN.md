@@ -46,8 +46,11 @@ python -m code_agent_collab.cli coding-loop "add a tiny test" --apply
 
 项目默认使用本地 `mock` provider。只有你想接真实模型时，才需要配置 DeepSeek、OpenAI 或 OpenAI-compatible provider。
 
-`benchmark` 用同一组小型编码任务对比单 Agent 与自适应多 Agent 流程，生成 Markdown 汇总和 JSONL 原始记录到 `logs/benchmarks/`。每个任务都在临时项目里运行，改动只进入隔离测试副本，不会应用到当前仓库。token 数按输入/输出字符粗略估算，不等于 Provider 账单用量；默认 `mock` 只验证评测流程和编排开销，要比较模型质量需先配置真实 Provider。
+在 Windows 上进行 DeepSeek 真实评测，可运行 `powershell -ExecutionPolicy Bypass -File scripts/run-deepseek-benchmark.ps1`，然后在隐藏输入提示中输入 API Key。脚本只在本次进程中设置密钥，结束后恢复原环境变量；密钥不会进入命令行参数或评测报告。
 
+`benchmark` 用同一组 10 个小型编码任务对比单 Agent 与自适应多 Agent 流程，生成 Markdown 汇总和 JSONL 原始记录到 `logs/benchmarks/`。每个任务都在临时项目里运行，只有 `src/solution.py` 会进入隔离测试副本；模型不能修改固定测试夹具。可用 `--repeats 3` 独立重复运行三轮。Provider 返回 usage 时记录其 token 数；没有 usage 时才按字符数估算，响应 usage 不一定覆盖失败或重试请求的全部计费。
+
+一次 DeepSeek `deepseek-chat` 实测（评测集 v1.3，10 项 × 3 轮）：单 Agent 30/30，多 Agent 30/30；平均分别使用 768 和 1,935 tokens，耗时 3.20s 和 4.83s。当前任务都是小型纯函数，说明在这组简单任务上多 Agent 没有提高成功率，且用了更多 token、时间；不能据此推断大型仓库任务的表现。
 ## 常用命令
 
 ```powershell
@@ -59,7 +62,7 @@ python -m code_agent_collab.cli plans
 python -m code_agent_collab.cli approve "任务ID或关键词"
 python -m code_agent_collab.cli apply-draft "任务ID或关键词"
 python -m code_agent_collab.cli coding-loop "任务目标" [--apply]
-python -m code_agent_collab.cli benchmark [--mode single|multi|both]
+python -m code_agent_collab.cli benchmark [--mode single|multi|both] [--repeats N]
 python -m code_agent_collab.webui
 python -m code_agent_collab.desktop
 ```

@@ -46,8 +46,11 @@ python -m code_agent_collab.cli coding-loop "add a tiny test" --apply
 
 By default, the project uses the local `mock` provider. Configure DeepSeek, OpenAI, or an OpenAI-compatible provider only when you want real model calls.
 
-`benchmark` compares a one-shot Coder with the adaptive multi-agent coding loop on the same isolated tasks. It writes a Markdown summary and JSONL run records under `logs/benchmarks/`; changes are tested in temporary copies and never applied to the working project. Token counts are estimates based on text length, not provider billing usage. Use a configured real provider for model-quality comparisons; `mock` only checks the harness and pipeline overhead.
+On Windows, run a real DeepSeek evaluation with `powershell -ExecutionPolicy Bypass -File scripts/run-deepseek-benchmark.ps1`, then enter the API key at the hidden prompt. The script sets the key only for the current process and restores the previous environment afterward; the key is not passed as a command-line argument or written to benchmark reports.
 
+`benchmark` compares a one-shot Coder with the adaptive multi-agent coding loop on the same 10 isolated tasks. It writes a Markdown summary and JSONL run records under `logs/benchmarks/`. Every task runs in a temporary project; only `src/solution.py` is applied to the isolated test copy, so model drafts cannot edit the fixed test fixture. Run with `--repeats 3` for independent repeats. Provider-reported usage is preferred; character-based token estimates are used only when usage is missing. Response usage may not include all billing for failed or retried requests.
+
+One DeepSeek `deepseek-chat` run (benchmark v1.3, 10 tasks × 3 repeats) scored 30/30 for both single and multi-agent modes. Average usage was 768 vs 1,935 tokens, and average latency was 3.20s vs 4.83s. These are small pure-function tasks: multi-agent did not improve success on this set and used more tokens and time. This does not predict performance on larger repository tasks.
 ## Main Commands
 
 ```powershell
@@ -59,7 +62,7 @@ python -m code_agent_collab.cli plans
 python -m code_agent_collab.cli approve "task id or keyword"
 python -m code_agent_collab.cli apply-draft "task id or keyword"
 python -m code_agent_collab.cli coding-loop "task goal" [--apply]
-python -m code_agent_collab.cli benchmark [--mode single|multi|both]
+python -m code_agent_collab.cli benchmark [--mode single|multi|both] [--repeats N]
 python -m code_agent_collab.webui
 python -m code_agent_collab.desktop
 ```
