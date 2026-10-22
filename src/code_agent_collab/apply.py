@@ -21,6 +21,7 @@ from .draft_review import (
     mentions_main_vault_outside_project,
 )
 from .file_utils import ensure_dir, read_text, write_text
+from .execution_sandbox import limit_command_output
 from .permissions import (
     PROJECT_WRITE,
     check_command,
@@ -460,8 +461,10 @@ def run_tests(
         )
     except subprocess.TimeoutExpired as exc:
         output = (exc.stdout or "") + (exc.stderr or "")
-        return 124, f"测试超时（>{timeout_seconds} 秒），已终止测试进程。\n{output[-2000:]}"
-    return result.returncode, (result.stdout + result.stderr)
+        return 124, limit_command_output(
+            f"测试超时（>{timeout_seconds} 秒），已终止测试进程。\n{output}"
+        )
+    return result.returncode, limit_command_output(result.stdout + result.stderr)
 
 
 def _test_env(project_root: Path) -> dict[str, str]:

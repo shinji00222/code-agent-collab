@@ -81,6 +81,26 @@ class RunCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("当前 Provider", output)
 
+    def test_direct_run_cli_call_rejects_non_allowlisted_command(self) -> None:
+        with patch.object(subprocess, "Popen") as popen:
+            with self.assertRaises(ValueError):
+                run_cli(["powershell", "-Command", "whoami"])
+        popen.assert_not_called()
+
+    def test_run_cli_caps_returned_command_output(self) -> None:
+        class NoisyProcess(_StubProcess):
+            def communicate(self, timeout: int | None = None) -> tuple[str, str]:
+                del timeout
+                return "汉" * (24 * 1024), "尾"
+
+        with patch.object(subprocess, "Popen", return_value=NoisyProcess()):
+            code, output = run_cli(["pending"])
+
+        self.assertEqual(code, 0)
+        self.assertLessEqual(len(output.encode("utf-8")), 64 * 1024)
+        self.assertIn("已截断", output)
+        self.assertTrue(output.endswith("尾"))
+
     def test_frozen_mode_uses_sibling_cli_executable(self) -> None:
         """打包版必须调用同目录的 CLI 可执行程序。
 

@@ -67,7 +67,7 @@
 | **v0.16** | Stable Coding Loop | 修核心 bug，把 Planner / Coder / Reviewer、自动 test、retry、防死循环跑稳 | 至少一个本地样例能从任务到 patch/diff 闭环；失败能停在可解释状态，不无限循环 |
 | **v0.17** | Hierarchical Context | 已先落地项目文档 + 代码文件 context selection、token 预算和 Coder 上下文包摘录；后续补全局 / repo / module / task / agent memory | 每次任务能说明选了哪些上下文、为什么选、token 大约用了多少 |
 | **v0.18** | Evaluation | 已完成 10 项固定测试、重复采样、Provider usage 和 JSONL/Markdown 报告；DeepSeek v1.3 三轮对照两种模式均 30/30，小任务中多 Agent 使用更多 token、耗时更长 | 已达到初版可复核的 Single Agent vs Multi-Agent 对照；局限是轻量纯函数任务集，后续需要有代表性的仓库级任务 |
-| **v0.19** | Execution Sandbox Hardening | 把轻隔离、临时副本执行和命令安全边界做扎实 | 测试失败不污染正式仓库；命令有白名单、超时、输出上限和密钥剥离；重型沙箱只按需评估 |
+| **v0.19** | Execution Sandbox Hardening | 已完成第一轮轻隔离加固：apply 测试在临时副本运行，Web 命令执行时复核白名单；测试环境剥离密钥，两条命令执行路径均有超时和 64 KiB 返回输出上限 | 初版覆盖测试失败不污染正式仓库、白名单、超时、输出上限和测试密钥剥离；未知仓库与第三方脚本的重型隔离仍按需评估 |
 
 > 注意：用户口头说的 v0.2 / v0.3 / v0.4 是"产品路线阶段名"；本仓库真实版本已经到 v0.15.x，所以落到当前仓库时顺延为 v0.16 / v0.17 / v0.18。
 

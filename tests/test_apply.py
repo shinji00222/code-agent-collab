@@ -448,6 +448,18 @@ class EnvTests(unittest.TestCase):
 
             self.assertEqual(code, 0, output)
 
+    def test_run_tests_caps_returned_command_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            noisy = subprocess.CompletedProcess([], 1, stdout="x" * (70 * 1024), stderr="tail")
+            with patch("code_agent_collab.apply.subprocess.run", return_value=noisy):
+                code, output = run_tests(root)
+
+        self.assertEqual(code, 1)
+        self.assertLessEqual(len(output.encode("utf-8")), 64 * 1024)
+        self.assertIn("已截断", output)
+        self.assertTrue(output.endswith("tail"))
+
 
 if __name__ == "__main__":
     unittest.main()

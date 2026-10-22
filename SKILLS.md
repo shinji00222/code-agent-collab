@@ -606,3 +606,12 @@ python -m unittest discover -s tests
 - 为什么：避免把密钥放进聊天、命令行参数、仓库或报告；环境变量只在当前 PowerShell 进程中临时设置。
 - 怎么验证：确认命令输出的报告路径位于 `logs/benchmarks/`，包含 60 条 JSONL 记录；结束后检查 `$env:DEEPSEEK_API_KEY` 已恢复到运行前状态。
 - 常见坑：评测会产生真实 API 调用和费用；响应 usage 可能不包括失败或重试请求的全部计费。密钥曾出现在聊天中时应先在服务商后台撤销并换新，再通过隐藏提示输入。
+
+
+## 55. 执行输出与命令边界（v0.19.0 开发版）
+
+- 做什么：测试命令和 Web CLI 返回内容共用 64 KiB 上限；Web CLI 执行入口自身复核命令白名单。
+- 为什么：避免超长输出占满任务记录，并确保白名单不只依赖 UI/解析调用方。
+- 怎么做：通过 `execution_sandbox.limit_command_output()` 保留末尾诊断；新增或调整命令时同时保留执行入口的 allowlist 检查。测试环境仍由 `apply._test_env()` 清理敏感变量并固定 mock Provider；apply 的 patch 和测试继续只在临时副本中进行。
+- 怎么验证：`python scripts/run-tests.py test_apply test_webui`；检查超长输出被标记截断、未知命令在启动子进程前被拒绝、隔离失败不会写回正式项目。
+- 常见坑：64 KiB 是返回字符串上限，不是子进程内存或磁盘配额；对未知外部仓库、安装依赖、第三方脚本开放命令时，须另行设计 WSL/Docker/VM 隔离。

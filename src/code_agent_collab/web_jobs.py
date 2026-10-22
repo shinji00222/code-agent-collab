@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import job_store
 from .control import clear_pause_request
+from .execution_sandbox import limit_command_output
 from .web_project import CLI_EXE_NAME, PROJECT_ROOT, SRC_DIR
 
 ALLOWED_COMMANDS = {
@@ -178,6 +179,9 @@ def build_command(text: str) -> list[str]:
 
 
 def run_cli(args: list[str], timeout: int = 180) -> tuple[int, str]:
+    if not args or args[0] not in ALLOWED_COMMANDS:
+        command = args[0] if args else ""
+        raise ValueError(f"不允许的命令：{command}（可用：{', '.join(sorted(ALLOWED_COMMANDS))}）")
     if args[0] == "help":
         return 0, HELP_TEXT
     if args[0] in {"run", "run-adaptive", "approve"}:
@@ -212,7 +216,7 @@ def run_cli(args: list[str], timeout: int = 180) -> tuple[int, str]:
     output = stdout
     if stderr:
         output += "\n" + stderr
-    return process.returncode, output
+    return process.returncode, limit_command_output(output)
 
 
 def _project_root() -> Path:
