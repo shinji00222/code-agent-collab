@@ -19,7 +19,7 @@
 
 ## 当前状态
 
-当前版本：`v0.19.0`（Windows 预览版；GitHub 预览标签 `v0.19.0-rc.1`）。安装包未签名，Windows 可能显示 SmartScreen 提示；最终 EXE 的启动验收尚未完成。
+当前版本：`v0.19.0`（[Windows 预览版 `v0.19.0-rc.1`](https://github.com/shinji00222/code-agent-collab/releases/tag/v0.19.0-rc.1)）。安装包未签名，Windows 可能显示 SmartScreen 提示；最终 EXE 的启动验收尚未完成。
 
 当前主线：**Stable Coding Loop -> Hierarchical Context -> Evaluation -> Execution Sandbox Hardening**。
 

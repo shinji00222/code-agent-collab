@@ -2,7 +2,7 @@
 
 ## v0.19.0 - 2026-10-22（Execution Sandbox Hardening Windows 预览版）
 
-- 分类：Windows x64 预览版，GitHub 标签 `v0.19.0-rc.1`；当前 Windows 11 上构建，无自动安装器，可解压使用。此预览包未数字签名，Windows 可能显示 SmartScreen 警告；不要求用户绕过系统保护。
+- 分类：Windows x64 预览版，GitHub [Release `v0.19.0-rc.1`](https://github.com/shinji00222/code-agent-collab/releases/tag/v0.19.0-rc.1)；当前 Windows 11 上构建，无自动安装器，可解压使用。此预览包未数字签名，Windows 可能显示 SmartScreen 警告；不要求用户绕过系统保护。
 - Web CLI 执行入口增加白名单复核，避免绕过命令解析函数直接调用时执行未授权命令。
 - 新增共享命令输出限制：测试执行与 Web CLI 返回内容最多 64 KiB，超出时保留末尾诊断并标注截断。
 - 保留已有隔离机制：apply 测试先复制临时工作区再应用草稿；测试超时 120 秒，测试环境清除 API Key、token、cookie 等敏感变量并固定 mock Provider。Web CLI 超时默认 180 秒。

@@ -19,7 +19,7 @@ This project is not about adding more agents for show. The main goal is to make 
 
 ## Current Status
 
-Current version: `v0.19.0` (Windows preview candidate, tag `v0.19.0-rc.1`). The package is unsigned and may show a SmartScreen warning; final EXE launch acceptance is pending.
+Current version: `v0.19.0` ([Windows preview `v0.19.0-rc.1`](https://github.com/shinji00222/code-agent-collab/releases/tag/v0.19.0-rc.1)). The package is unsigned and may show a SmartScreen warning; final EXE launch acceptance is pending.
 
 Current direction: **Stable Coding Loop -> Hierarchical Context -> Evaluation -> Execution Sandbox Hardening**.
 
