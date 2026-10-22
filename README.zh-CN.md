@@ -19,9 +19,9 @@
 
 ## 当前状态
 
-当前版本：`v0.18.0`（开发版，尚未发布）
+当前版本：`v0.19.0`（Windows 发行候选版，尚未发布）
 
-当前主线：**Stable Coding Loop -> Hierarchical Context -> Evaluation**。
+当前主线：**Stable Coding Loop -> Hierarchical Context -> Evaluation -> Execution Sandbox Hardening**。
 
 项目仍然是实验原型，但主流程会刻意保守：先草稿、再审查、再预览 diff、再测试，最后才应用。
 
@@ -38,7 +38,7 @@ python -m code_agent_collab.cli coding-loop "add a tiny test"
 python -m code_agent_collab.cli benchmark
 ```
 
-上面的 `coding-loop` 命令默认是 dry-run，只预览建议改动；`benchmark` 会在临时项目里运行固定任务和测试。确认要应用通过审查的草稿时，再运行：
+测试会在临时项目副本中运行，并清理测试环境里的 API 凭证；测试和 Web CLI 返回的命令输出最多 64 KiB。Web CLI 执行前会再次校验命令白名单，并设有超时。上面的 `coding-loop` 命令默认是 dry-run，只预览建议改动；`benchmark` 会在临时项目里运行固定任务和测试。确认要应用通过审查的草稿时，再运行：
 
 ```powershell
 python -m code_agent_collab.cli coding-loop "add a tiny test" --apply

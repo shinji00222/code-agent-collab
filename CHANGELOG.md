@@ -1,12 +1,13 @@
 # 更新日志
 
-## v0.19.0 - 2026-10-22（Execution Sandbox Hardening 开发版）
+## v0.19.0 - 2026-10-22（Execution Sandbox Hardening Windows 发行候选版）
 
-- 分类：执行沙箱加固阶段开发版；本次推送不打 tag、不创建 Release。
+- 分类：Windows 发行候选版，Windows x64 候选包，当前 Windows 11 上构建；无自动安装器，可并行解压使用。尚未发布 GitHub Release。
 - Web CLI 执行入口增加白名单复核，避免绕过命令解析函数直接调用时执行未授权命令。
 - 新增共享命令输出限制：测试执行与 Web CLI 返回内容最多 64 KiB，超出时保留末尾诊断并标注截断。
 - 保留已有隔离机制：apply 测试先复制临时工作区再应用草稿；测试超时 120 秒，测试环境清除 API Key、token、cookie 等敏感变量并固定 mock Provider。Web CLI 超时默认 180 秒。
-- 验证：定向 apply/Web UI 47 项通过；全量测试 309 项通过。
+- 兼容性：现有 CLI 命令和配置格式保持兼容；Web 执行器会拒绝白名单外命令。升级时解压新版并整体替换旧程序目录，保持 EXE、`_internal` 和 CLI 同级。
+- 验证：定向 apply/Web UI 47 项通过；全量测试 310 项通过；ZIP 已构建并完成结构检查。最终 EXE 启动时 Windows 显示“打开文件 - 安全警告”，进程和主页服务均未启动，因此未通过最终包验收。
 - 已知限制：64 KiB 限制约束返回和保存的输出文本；子进程输出先由 Python 捕获，因此不是 OS 级内存/磁盘配额。未知仓库、依赖安装和第三方脚本仍需单独评估 WSL/Docker/VM。
 
 ## v0.18.0 - 2026-10-15（Evaluation benchmark 开发版）

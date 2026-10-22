@@ -19,7 +19,7 @@ This project is not about adding more agents for show. The main goal is to make 
 
 ## Current Status
 
-Current version: `v0.19.0` (development; not released)
+Current version: `v0.19.0` (Windows release candidate; not published)
 
 Current direction: **Stable Coding Loop -> Hierarchical Context -> Evaluation -> Execution Sandbox Hardening**.
 
@@ -38,7 +38,7 @@ python -m code_agent_collab.cli coding-loop "add a tiny test"
 python -m code_agent_collab.cli benchmark
 ```
 
-Test runs use a temporary project copy, strip API credentials from the test environment, and return at most 64 KiB of command output. Web terminal commands are checked against an allowlist at execution time and have a timeout. The `coding-loop` command above runs in dry-run mode and previews the proposed change. The benchmark command runs its fixed tasks and tests in temporary projects. To apply a reviewed draft, run:
+Test runs use a temporary project copy, strip API credentials from the test environment, and return at most 64 KiB of command output. Web terminal commands are checked against an allowlist at execution time and have a timeout. The Windows release candidate includes the execution sandbox hardening described in `CHANGELOG.md`; the package is not published yet. The `coding-loop` command above runs in dry-run mode and previews the proposed change. The benchmark command runs its fixed tasks and tests in temporary projects. To apply a reviewed draft, run:
 
 ```powershell
 python -m code_agent_collab.cli coding-loop "add a tiny test" --apply
