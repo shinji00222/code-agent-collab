@@ -618,3 +618,11 @@ python -m unittest discover -s tests
 
 - 发布门禁补充：最终 ZIP 中的 GUI EXE 必须实际打开窗口、返回主页 HTTP 200、正常关窗并释放端口；构建成功与测试通过不能替代验收。遇 Windows 安全警告时停止，不绕过系统保护。
 - 规划状态：共享执行接口、显式临时沙箱对象、测试超时回归和有界子进程输出仍未完成；不要把 v0.19.0 发行候选说成已发布。
+
+## 56. Windows 冻结包运行时缓存回退（v0.19.0）
+
+- 做什么：为 Python.NET 和 WebView2 互操作文件选择可写的 ASCII 缓存目录。
+- 为什么：受限运行环境可能禁止写入 `%LOCALAPPDATA%\CodeAgentCollab`；启动钩子若只尝试该目录，会在 GUI 打开前以 WinError 5 退出。
+- 怎么做：按顺序尝试 Local AppData、系统临时目录、PyInstaller 运行目录；每个候选先验证 ASCII 路径并创建目录，失败后继续尝试下一个，全部失败时汇总路径和错误。
+- 怎么验证：运行 `python scripts/run-tests.py test_runtime_hook_pythonnet_path`，覆盖非 ASCII 用户目录、默认目录、Local AppData 被拒、临时目录被拒、Python.NET/WebView staging 和全部目录不可写；发布仍需对最终 ZIP 实测窗口、主页 HTTP 200、正常关窗和端口释放。
+- 常见坑：源码测试和重打包通过不能代替最终 ZIP 启动验证；缓存目录 fallback 修复若未在目标 Windows 用户权限下实测，仍不能宣称 GUI 门禁已通过。

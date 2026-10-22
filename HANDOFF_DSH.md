@@ -163,7 +163,7 @@ git commit -m "feat: queue and persist web jobs"
 
 ## 6. 重要文件
 
-- 问题台账：`C:\Users\<你的用户名>\Desktop\多Agent代码协作助手-当前问题整理.md`
+- 问题台账：`dev-vault/projects/current-issues.md`
 - 项目规则：`AGENTS.md`
 - 技能沉淀：`SKILLS.md`（§48 权限边界、§49 Web API 加固、§50 后台任务队列、§51 路径包含判定的坑）
 - 变更记录：`CHANGELOG.md`
@@ -193,7 +193,7 @@ git commit -m "feat: queue and persist web jobs"
 2. 跑 targeted 测试。
 3. 跑 `python scripts/run-tests.py`。
 4. 更新 `CHANGELOG.md`、`VERSIONING.md`、`SKILLS.md`。
-5. 更新外部问题台账。
+5. 更新本机私有问题台账 `dev-vault/projects/current-issues.md`。
 6. 做敏感扫描：使用项目常用的 `rg` 敏感信息扫描，排除 `logs/`、`dev-vault/`、`dist/`、`build/`。命中测试假 key 和源码 header 字段名可以接受；不能有真实 key。
 
 7. `git status --short --branch` 和 `git diff --stat`。

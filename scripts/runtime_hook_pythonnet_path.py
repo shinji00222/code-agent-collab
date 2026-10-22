@@ -34,6 +34,41 @@ def _ascii_existing_path(path: str) -> Path:
     )
 
 
+def _writable_cache_root(component: str) -> Path:
+    """Choose a writable ASCII cache location, falling back to temp or the bundle."""
+    candidates: list[Path] = []
+    errors: list[str] = []
+
+    def add_candidate(base: str, *parts: str) -> None:
+        try:
+            ascii_base = _ascii_existing_path(base)
+            candidates.append(ascii_base.joinpath(*parts))
+        except (OSError, RuntimeError) as exc:
+            errors.append(f"{base}: {exc}")
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        add_candidate(local_app_data, "CodeAgentCollab", component)
+
+    temp_root = tempfile.gettempdir()
+    if temp_root:
+        add_candidate(temp_root, "CodeAgentCollab", component)
+
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root:
+        add_candidate(bundle_root, "runtime-cache", component)
+
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+        except OSError as exc:
+            errors.append(f"{candidate}: {exc}")
+
+    detail = "; ".join(errors) if errors else "no cache locations are available"
+    raise OSError(f"Unable to create a writable ASCII runtime cache: {detail}")
+
+
 def _stage_pythonnet() -> None:
     if os.name != "nt" or not getattr(sys, "frozen", False):
         return
@@ -46,16 +81,12 @@ def _stage_pythonnet() -> None:
     if not source_loader.is_file():
         raise FileNotFoundError(f"Python.NET runtime assembly missing: {source_loader}")
 
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if not local_app_data:
-        local_app_data = tempfile.gettempdir()
-    cache_root = _ascii_existing_path(local_app_data) / "CodeAgentCollab" / "pythonnet"
+    cache_root = _writable_cache_root("pythonnet")
     fingerprint = hashlib.sha256(source_loader.read_bytes()).hexdigest()[:16]
     staged_package = cache_root / fingerprint
     staged_loader = staged_package / "runtime" / "Python.Runtime.dll"
 
     if not staged_loader.is_file():
-        cache_root.mkdir(parents=True, exist_ok=True)
         staging_root = Path(tempfile.mkdtemp(prefix=".stage-", dir=cache_root))
         try:
             candidate = staging_root / "pythonnet"
@@ -87,10 +118,7 @@ def _stage_webview_interop() -> None:
     if not source_lib.is_dir():
         raise FileNotFoundError(f"pywebview interop libraries missing: {source_lib}")
 
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if not local_app_data:
-        local_app_data = tempfile.gettempdir()
-    cache_root = _ascii_existing_path(local_app_data) / "CodeAgentCollab" / "webview"
+    cache_root = _writable_cache_root("webview")
     digest = hashlib.sha256()
     files = sorted(path for path in source_lib.rglob("*") if path.is_file())
     for path in files:

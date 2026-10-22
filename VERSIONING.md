@@ -1,6 +1,6 @@
 ### v0.19.0 Windows 发行门槛（2026-10-22）
 
-分类为 Execution Sandbox Hardening Windows 发行候选版（x64）；全量 310 项通过且 ZIP 已构建，但最终 EXE 遇到 Windows“打开文件 - 安全警告”，没有服务启动证据。未创建 tag 或 GitHub Release，不能标为已发布；不要绕过系统保护。已知未完成项：共享执行接口、明确的临时沙箱对象、测试超时回归、子进程捕获阶段的内存上限；这些在规划中仍待收口。当前已实现 apply 临时副本、固定 cwd、120 秒测试超时、mock Provider 和测试密钥清理；Web CLI 执行入口复核白名单、默认 180 秒超时；测试与 CLI 返回输出上限 64 KiB。定向 apply/Web UI 47 项通过，全量测试 310 项通过。未知仓库、依赖安装和第三方脚本仍按需评估重型隔离。
+分类为 Execution Sandbox Hardening Windows 发行候选版（x64）。最终 ZIP 第一次启动显示 runtime hook 无法写入 `%LOCALAPPDATA%\CodeAgentCollab`（WinError 5）；已改为依次尝试 Local AppData、临时目录和程序运行目录，并新增 7 项回退与实际 staging 测试。全量测试 317 项通过，候选 ZIP 已重建；从本次重建 ZIP 启动窗口、验证首页 HTTP 200、正常关窗和端口释放仍待最终实机验收。未创建 tag 或 GitHub Release，不能标为已发布；不绕过系统保护。已知未完成项：共享执行接口、明确的临时沙箱对象、测试超时回归、子进程捕获阶段的内存上限。当前已有 apply 临时副本、固定 cwd、120 秒测试超时、mock Provider 和测试密钥清理；Web CLI 执行入口复核白名单、默认 180 秒超时；测试与 CLI 返回文本上限 64 KiB。未知仓库、依赖安装和第三方脚本仍按需评估重型隔离。
 
 # 版本分类规则
 

@@ -150,7 +150,7 @@ review 只标记状态；confirm 由人触发，默认写回 dev-vault/project-v
 
 项目的问题清单文档是**唯一的问题台账**，必须和代码同步：
 
-- 台账文件：`C:\Users\<你的用户名>\Desktop\多Agent代码协作助手-当前问题整理.md`（目前在本机桌面，不在项目目录内；若以后移进项目，要同步改 `AGENTS.md` 和 `PROJECT_RULES.md` 里的路径）。
+- 台账文件：`dev-vault/projects/current-issues.md`（本机私有并由 `.gitignore` 排除；更新 `AGENTS.md`、`PROJECT_RULES.md` 和 `MAINTENANCE.md` 时保持路径一致）。
 - **发现新问题**（含"我方实现自身的漏洞""文档过期""企划没实现"）→ 本次任务收尾前写进台账：编号、优先级、大白话解释 + 专业术语解释、证据、建议方案。
 - **修复后立刻回填** → 在原条目标"已修复"，并写修复版本号、本地提交号、验证方式、遗留限制；只写进 `CHANGELOG.md` 不算完成。
 - **没有验证证据不能标"已修复"**，也不写"应该修好了"。
