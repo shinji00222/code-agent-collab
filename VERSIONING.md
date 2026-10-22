@@ -1,6 +1,6 @@
-### v0.19.0 Windows 发行门槛（2026-10-22）
+### v0.19.0 Windows 预览上传（2026-10-22）
 
-分类为 Execution Sandbox Hardening Windows 发行候选版（x64）。最终 ZIP 第一次启动显示 runtime hook 无法写入 `%LOCALAPPDATA%\CodeAgentCollab`（WinError 5）；已改为依次尝试 Local AppData、临时目录和程序运行目录，并新增 7 项回退与实际 staging 测试。全量测试 317 项通过，候选 ZIP 已重建；从本次重建 ZIP 启动窗口、验证首页 HTTP 200、正常关窗和端口释放仍待最终实机验收。未创建 tag 或 GitHub Release，不能标为已发布；不绕过系统保护。已知未完成项：共享执行接口、明确的临时沙箱对象、测试超时回归、子进程捕获阶段的内存上限。当前已有 apply 临时副本、固定 cwd、120 秒测试超时、mock Provider 和测试密钥清理；Web CLI 执行入口复核白名单、默认 180 秒超时；测试与 CLI 返回文本上限 64 KiB。未知仓库、依赖安装和第三方脚本仍按需评估重型隔离。
+分类为 Execution Sandbox Hardening Windows 预览版（x64），上传标签 `v0.19.0-rc.1`。最终 ZIP 首次启动修复了 runtime hook 无法写入 `%LOCALAPPDATA%\CodeAgentCollab`（WinError 5）的问题，增加 7 项回退与实际 staging 测试；全量测试 317 项通过，候选 ZIP 已重建并完成结构与隐私检查。EXE 未数字签名，Windows 可能显示 SmartScreen 警告；最终包的窗口、主页 HTTP 200、正常关窗和端口释放尚未完成实机验收，因此只上传为预览版，不宣称正式稳定版门禁通过，也不要求绕过系统保护。已知未完成项：共享执行接口、明确的临时沙箱对象、测试超时回归、子进程捕获阶段的内存上限。当前已有 apply 临时副本、固定 cwd、120 秒测试超时、mock Provider 和测试密钥清理；Web CLI 执行入口复核白名单、默认 180 秒超时；测试与 CLI 返回文本上限 64 KiB。未知仓库、依赖安装和第三方脚本仍按需评估重型隔离。
 
 # 版本分类规则
 

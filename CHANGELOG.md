@@ -1,14 +1,14 @@
 # 更新日志
 
-## v0.19.0 - 2026-10-22（Execution Sandbox Hardening Windows 发行候选版）
+## v0.19.0 - 2026-10-22（Execution Sandbox Hardening Windows 预览版）
 
-- 分类：Windows 发行候选版，Windows x64 候选包，当前 Windows 11 上构建；无自动安装器，可并行解压使用。尚未发布 GitHub Release。
+- 分类：Windows x64 预览版，GitHub 标签 `v0.19.0-rc.1`；当前 Windows 11 上构建，无自动安装器，可解压使用。此预览包未数字签名，Windows 可能显示 SmartScreen 警告；不要求用户绕过系统保护。
 - Web CLI 执行入口增加白名单复核，避免绕过命令解析函数直接调用时执行未授权命令。
 - 新增共享命令输出限制：测试执行与 Web CLI 返回内容最多 64 KiB，超出时保留末尾诊断并标注截断。
 - 保留已有隔离机制：apply 测试先复制临时工作区再应用草稿；测试超时 120 秒，测试环境清除 API Key、token、cookie 等敏感变量并固定 mock Provider。Web CLI 超时默认 180 秒。
 - 兼容性：现有 CLI 命令和配置格式保持兼容；Web 执行器会拒绝白名单外命令。升级时解压新版并整体替换旧程序目录，保持 EXE、`_internal` 和 CLI 同级。
 - Windows 启动修复：最终包首次启动的截图显示 runtime hook 在写 `%LOCALAPPDATA%\CodeAgentCollab` 时收到 WinError 5。现在依次尝试 Local AppData、临时目录、程序运行目录；7 项定向回退与实际 staging 测试通过，候选 ZIP 已重建。
-- 验证：定向 apply/Web UI 47 项通过；更新后全量测试 317 项通过；ZIP 已重建并完成结构检查。重建 ZIP 的 GUI 窗口、主页 HTTP 200、正常关窗和端口释放尚待最后实机验收，因此本版本仍未发布。
+- 验证：定向 apply/Web UI 47 项通过；更新后全量测试 317 项通过；ZIP 已重建并完成结构与隐私检查。最终 ZIP 中 EXE 的 GUI 窗口、主页 HTTP 200、正常关窗和端口释放尚未完成实机验收；本版只作为明确标注的预览版上传，不代表正式稳定版验收通过。
 - 未完成的计划项：测试环境清理、cwd、超时和输出策略尚未统一到共享执行接口；临时副本尚未封装为明确的沙箱对象；缺少测试超时回归用例。64 KiB 目前限制返回文本，捕获子进程输出时仍可能占用较多内存。
 - 按需项：未知仓库、依赖安装和第三方脚本尚未引入 WSL/Docker/VM；当前主项目不需要开放到这些场景。
 
