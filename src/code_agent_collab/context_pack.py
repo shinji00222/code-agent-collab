@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .config import WorkbenchConfig, load_config
 from .file_utils import ensure_dir, read_text, simple_task_slug, write_text
+from .permissions import READ_ONLY, check_write
 
 
 @dataclass(frozen=True)
@@ -404,6 +405,7 @@ def _render_context_pack(
 def create_context_pack(project_root: Path, task_goal: str) -> ContextPackResult:
     task_id, content = build_context_pack(project_root, task_goal)
     output_path = project_root / "logs" / "context-packs" / f"{task_id}.md"
+    check_write(READ_ONLY, output_path, project_root, action="写入上下文包")
     ensure_dir(output_path.parent)
     write_text(output_path, content)
     return ContextPackResult(task_id=task_id, output_path=output_path)

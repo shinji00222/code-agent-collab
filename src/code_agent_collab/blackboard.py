@@ -12,6 +12,7 @@ from typing import Literal
 from .agents import AgentResult
 from .agents.orchestrator import WorkerSpec
 from .file_utils import ensure_dir
+from .permissions import READ_ONLY, check_write
 from .worker_runs import worker_id
 
 BlackboardStatus = Literal["planned", "running", "success", "failed", "skipped", "blocked"]
@@ -200,6 +201,7 @@ def _upsert_entry(
 
 def _write_blackboard(project_root: Path, task_id: str, entries: dict[str, BlackboardEntry]) -> None:
     path = blackboard_path(project_root, task_id)
+    check_write(READ_ONLY, path, project_root, action="写入黑板")
     ensure_dir(path.parent)
     payload = {
         "task_id": task_id,

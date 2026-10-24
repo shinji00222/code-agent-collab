@@ -8,6 +8,7 @@ from pathlib import Path
 from threading import get_ident
 
 from .file_utils import ensure_dir
+from .permissions import READ_ONLY, check_write
 
 
 PROGRESS_ENV = "AGENT_WORKBENCH_PROGRESS_FILE"
@@ -120,11 +121,12 @@ def publish_progress(
         "nodes": nodes,
     }
     path = progress_path(project_root)
-    _write_json_atomic(path, payload)
+    _write_json_atomic(project_root, path, payload)
     if not os.getenv(PROGRESS_ENV):
         task_path = task_progress_path(project_root, task_id)
-        _write_json_atomic(task_path, payload)
+        _write_json_atomic(project_root, task_path, payload)
         _write_json_atomic(
+            project_root,
             latest_progress_path(project_root),
             {
                 "task_id": task_id,
@@ -149,7 +151,8 @@ def read_progress(project_root: Path, task_id: str | None = None) -> dict | None
     return payload
 
 
-def _write_json_atomic(path: Path, payload: dict) -> None:
+def _write_json_atomic(project_root: Path, path: Path, payload: dict) -> None:
+    check_write(READ_ONLY, path, project_root, action="写入进度快照")
     ensure_dir(path.parent)
     temporary = path.with_name(f"{path.name}.{os.getpid()}.{get_ident()}.tmp")
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

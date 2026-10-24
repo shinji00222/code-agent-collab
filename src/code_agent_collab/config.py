@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .file_utils import write_text
+from .permissions import READ_ONLY, check_write
 
 
 CONFIG_DIR = ".agent-workbench"
@@ -86,5 +87,6 @@ def save_default_config(project_root: Path) -> Path:
         "devVaultDefaultMode": cfg.dev_vault_default_mode,
         "mainVaultWritePath": cfg.main_vault_write_path,
     }
+    check_write(READ_ONLY, path, project_root, action="写入本地配置")
     write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     return path

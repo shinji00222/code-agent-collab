@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from code_agent_collab.agents import PermissionLevel
 from code_agent_collab.permissions import (
@@ -282,6 +284,58 @@ class EnsureInsideProjectTests(unittest.TestCase):
                 self.root,
                 action="暂存",
             )
+
+
+class RuntimeWriteEnforcementTests(unittest.TestCase):
+    """N30 / N31：运行时账本与候选写入也走强制点。"""
+
+    def test_control_dir_env_outside_project_is_rejected(self) -> None:
+        from code_agent_collab.control import request_pause
+
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as other:
+            with patch.dict(os.environ, {"AGENT_WORKBENCH_CONTROL_DIR": other}):
+                with self.assertRaises(PermissionDenied):
+                    request_pause(Path(tmp))
+            self.assertEqual(list(Path(other).iterdir()), [])
+
+    def test_control_dir_env_inside_logs_is_allowed(self) -> None:
+        from code_agent_collab.control import request_pause
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            custom = root / "logs" / "custom-control"
+            with patch.dict(os.environ, {"AGENT_WORKBENCH_CONTROL_DIR": str(custom)}):
+                path = request_pause(root)
+            self.assertTrue(path.exists())
+
+    def test_default_runtime_writers_land_in_runtime_zone(self) -> None:
+        from code_agent_collab.config import save_default_config
+        from code_agent_collab.context_pack import create_context_pack
+        from code_agent_collab.task_log import TaskLogSnapshot, write_task_log
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            written = [
+                save_default_config(root),
+                create_context_pack(root, "运行时写入").output_path,
+                write_task_log(root, TaskLogSnapshot(task_id="t1", goal="g", status="running", detail="")),
+            ]
+            for path in written:
+                with self.subTest(path=path):
+                    self.assertTrue(path.exists())
+                    self.assertEqual(classify_path(path, root), WriteZone.RUNTIME)
+
+    def test_discard_rejects_note_outside_pending_dir(self) -> None:
+        from code_agent_collab.review import discard_pending_note
+
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as other:
+            root = Path(tmp)
+            outside = Path(other) / "note.md"
+            original = "- 状态：待审查\n"
+            outside.write_text(original, encoding="utf-8")
+            with self.assertRaises(PermissionDenied):
+                discard_pending_note(outside, project_root=root)
+            self.assertEqual(outside.read_text(encoding="utf-8"), original)
 
 
 if __name__ == "__main__":

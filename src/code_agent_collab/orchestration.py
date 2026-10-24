@@ -29,6 +29,7 @@ from .control import (
 )
 from .context_pack import ContextPackResult, create_context_pack
 from .file_utils import ensure_dir, write_text
+from .permissions import READ_ONLY, check_write
 from .progress import publish_progress, role_stage, workflow_tree
 from .providers import AIProvider, create_provider
 from .reflection import ReflectionResult, create_reflection
@@ -755,6 +756,7 @@ def _write_adaptive_log(
     results: list[AgentResult],
 ) -> Path:
     output_path = project_root / "logs" / "workflows" / f"{task_id}-adaptive.md"
+    check_write(READ_ONLY, output_path, project_root, action="写入自适应工作流日志")
     ensure_dir(output_path.parent)
     sections = []
     for result in results:
@@ -815,6 +817,7 @@ def create_adaptive_plan(
             )
 
     plan_path = _plan_dir(project_root) / f"{context_pack.task_id}.json"
+    check_write(READ_ONLY, plan_path, project_root, action="写入主控方案")
     ensure_dir(plan_path.parent)
     write_text(
         plan_path,

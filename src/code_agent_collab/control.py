@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .agents import AgentResult, PermissionLevel
 from .file_utils import ensure_dir
+from .permissions import READ_ONLY, check_write
 
 CONTROL_ENV = "AGENT_WORKBENCH_CONTROL_DIR"
 PAUSE_FILE_NAME = "pause.json"
@@ -34,6 +35,7 @@ def checkpoint_path(project_root: Path, task_id: str) -> Path:
 
 def request_pause(project_root: Path, *, source: str = "webui") -> Path:
     path = pause_path(project_root)
+    check_write(READ_ONLY, path, project_root, action="写入暂停请求")
     ensure_dir(path.parent)
     payload = {
         "requested": True,
@@ -98,6 +100,7 @@ def save_checkpoint(
     latest_integrator_specs: list[dict] | None = None,
 ) -> Path:
     path = checkpoint_path(project_root, task_id)
+    check_write(READ_ONLY, path, project_root, action="写入断点")
     ensure_dir(path.parent)
     payload = {
         "task_id": task_id,

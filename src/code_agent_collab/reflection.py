@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .config import load_config
 from .file_utils import ensure_dir, read_text, simple_task_slug, write_text
+from .permissions import DRAFT_WRITE, check_write
 
 
 @dataclass(frozen=True)
@@ -122,6 +123,7 @@ def create_reflection(project_root: Path, task: str | None = None) -> Reflection
     now = datetime.now()
     output_name = f"{now:%Y-%m-%d}-{simple_task_slug(task_id, max_length=48)}-复利候选.md"
     output_path = _pending_dir(project_root) / output_name
+    check_write(DRAFT_WRITE, output_path, project_root, action="写入复利候选")
     ensure_dir(output_path.parent)
     write_text(
         output_path,

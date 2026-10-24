@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from code_agent_collab.permissions import PermissionDenied
 from code_agent_collab.progress import (
     latest_progress_path,
     publish_progress,
@@ -49,7 +50,7 @@ class ProgressStoreTests(unittest.TestCase):
     def test_configured_progress_file_keeps_single_file_behavior(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            configured = root / "custom-progress.json"
+            configured = root / "logs" / "custom-progress.json"
             with patch.dict(os.environ, {"AGENT_WORKBENCH_PROGRESS_FILE": str(configured)}):
                 publish_progress(
                     root,
@@ -63,6 +64,25 @@ class ProgressStoreTests(unittest.TestCase):
             self.assertTrue(configured.exists())
             self.assertFalse(task_progress_path(root, "task-a").exists())
             self.assertFalse(latest_progress_path(root).exists())
+
+    def test_configured_progress_file_outside_runtime_zone_is_rejected(self) -> None:
+        """N31：环境变量不能把进度写到项目外或正式源码区。"""
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as other:
+            root = Path(tmp)
+            for configured in (Path(other) / "progress.json", root / "src" / "progress.json"):
+                with self.subTest(configured=configured), patch.dict(
+                    os.environ, {"AGENT_WORKBENCH_PROGRESS_FILE": str(configured)}
+                ):
+                    with self.assertRaises(PermissionDenied):
+                        publish_progress(
+                            root,
+                            task_id="task-a",
+                            goal="任务 A",
+                            status="running",
+                            detail="",
+                            nodes=[],
+                        )
+                    self.assertFalse(configured.exists())
 
 
 if __name__ == "__main__":

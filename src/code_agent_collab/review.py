@@ -80,8 +80,15 @@ def _append_review_record(content: str, reason: str, now: datetime) -> str:
     return content.rstrip() + f"\n\n## 审查记录\n\n- 审查时间：{now:%Y-%m-%d %H:%M:%S}\n- 审查结果：{reason}\n"
 
 
-def _mark_status(path: Path, status: str, reason: str, now: datetime | None = None) -> ReviewResult:
+def _mark_status(
+    project_root: Path,
+    path: Path,
+    status: str,
+    reason: str,
+    now: datetime | None = None,
+) -> ReviewResult:
     now = now or datetime.now()
+    check_write(DRAFT_WRITE, path, project_root, action="更新候选审查状态")
     content = read_text(path)
     content = _replace_status(content, status)
     content = _append_review_record(content, reason, now)
@@ -160,6 +167,7 @@ def review_pending_note(
     sensitive = scan_sensitive(_body_without_metadata(content))
     if sensitive:
         return _mark_status(
+            project_root,
             path,
             "待人工处理",
             "检测到敏感信息：" + "、".join(sensitive),
@@ -182,7 +190,7 @@ def review_pending_note(
     try:
         ai_text = provider.complete("知识入库审查", prompt)
     except Exception as exc:  # noqa: BLE001 - 审查失败要转为人工处理
-        return _mark_status(path, "待人工处理", f"AI 审查失败：{exc}", now)
+        return _mark_status(project_root, path, "待人工处理", f"AI 审查失败：{exc}", now)
 
     verdict = ""
     reason = ""
@@ -204,16 +212,16 @@ def review_pending_note(
             verdict = "approve"
             reason = "mock 审查（仅本地脱敏扫描通过）"
         else:
-            return _mark_status(path, "待人工处理", "AI 审查输出无法解析", now)
+            return _mark_status(project_root, path, "待人工处理", "AI 审查输出无法解析", now)
 
     if verdict != "approve":
-        return _mark_status(path, "待人工处理", reason or "AI 判定不建议入库", now)
+        return _mark_status(project_root, path, "待人工处理", reason or "AI 判定不建议入库", now)
 
     # AI 审查通过：只记录 AI 建议的写入位置，绝不自动入库，必须人工确认
     if ai_target:
         check_write(DRAFT_WRITE, path, project_root, action="记录 AI 建议写入位置")
         write_text(path, content.rstrip() + f"\n{AI_TARGET_PREFIX}{ai_target}\n")
-    return _mark_status(path, "待人工确认", "AI 审查通过，建议入库，等待人工确认", now)
+    return _mark_status(project_root, path, "待人工确认", "AI 审查通过，建议入库，等待人工确认", now)
 
 
 def confirm_pending_note(
@@ -228,6 +236,7 @@ def confirm_pending_note(
     sensitive = scan_sensitive(_body_without_metadata(content))
     if sensitive:
         return _mark_status(
+            project_root,
             path,
             "待人工处理",
             "人工确认仍发现敏感信息：" + "、".join(sensitive),
@@ -240,7 +249,7 @@ def confirm_pending_note(
     if target_path.exists():
         relative = target_path.resolve().relative_to(vault.resolve())
         reason = f"目标文件已存在，拒绝覆盖：{relative}"
-        _mark_status(path, "待人工处理", reason, now)
+        _mark_status(project_root, path, "待人工处理", reason, now)
         return ReviewResult(
             path=path,
             status="待人工处理",
@@ -259,10 +268,10 @@ def confirm_pending_note(
         # 写入被硬边界拒绝（目标在项目目录之外）：不抛到调用方，转成可读的「待人工处理」，
         # 让 CLI/网页能把原因显示出来，同时保证目标文件没有被创建。
         reason = f"拒绝写入：{exc}"
-        _mark_status(path, "待人工处理", reason, now)
+        _mark_status(project_root, path, "待人工处理", reason, now)
         return ReviewResult(path=path, status="待人工处理", reason=reason)
     relative = target_path.resolve().relative_to(vault.resolve())
-    _mark_status(path, f"已确认入库：{relative}", f"人工确认，写入 {relative}", now)
+    _mark_status(project_root, path, f"已确认入库：{relative}", f"人工确认，写入 {relative}", now)
     return ReviewResult(
         path=path,
         status="已确认入库",
@@ -271,8 +280,17 @@ def confirm_pending_note(
     )
 
 
-def discard_pending_note(path: Path, now: datetime | None = None) -> ReviewResult:
-    return _mark_status(path, "已废弃", "用户选择废弃，不写入主知识库", now)
+def discard_pending_note(
+    path: Path,
+    now: datetime | None = None,
+    *,
+    project_root: Path | None = None,
+) -> ReviewResult:
+    if project_root is None:
+        # 兼容旧调用：候选固定在 <项目>/dev-vault/pending/ 下，由此反推项目根；
+        # 不在这个位置的路径交给 check_write 判成项目外并拒绝。
+        project_root = path.parent.parent.parent if path.parent.name == "pending" else path.parent
+    return _mark_status(project_root, path, "已废弃", "用户选择废弃，不写入主知识库", now)
 
 
 def list_pending_paths(project_root: Path, task: str | None = None) -> list[Path]:

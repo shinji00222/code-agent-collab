@@ -13,6 +13,7 @@ from typing import Literal
 from .agents import AgentResult, PermissionLevel
 from .agents.orchestrator import WorkerSpec
 from .file_utils import ensure_dir
+from .permissions import READ_ONLY, check_write
 
 WorkerStatus = Literal["pending", "running", "success", "failed", "skipped"]
 _RUNS_LOCK = RLock()
@@ -236,6 +237,7 @@ def mark_worker_skipped(
 def _save_record(project_root: Path, task_id: str, record: WorkerRunRecord) -> None:
     with _RUNS_LOCK:
         path = worker_runs_path(project_root, task_id)
+        check_write(READ_ONLY, path, project_root, action="写入 WorkerRun 账本")
         ensure_dir(path.parent)
         records = load_worker_runs(project_root, task_id)
         previous = records.get(record.worker_id)

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .file_utils import ensure_dir, write_text
+from .permissions import READ_ONLY, check_write
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ def task_log_path(project_root: Path, task_id: str) -> Path:
 
 def write_task_log(project_root: Path, snapshot: TaskLogSnapshot) -> Path:
     path = task_log_path(project_root, snapshot.task_id)
+    check_write(READ_ONLY, path, project_root, action="写入任务日志")
     ensure_dir(path.parent)
     write_text(path, _render_task_log(project_root, snapshot))
     return path

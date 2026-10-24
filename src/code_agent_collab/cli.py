@@ -395,7 +395,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "discard":
         path = find_pending_path(project_root, args.name)
-        result = discard_pending_note(path)
+        result = discard_pending_note(path, project_root=project_root)
         print(f"{result.path.name} -> {result.status}")
         return 0
 

@@ -8,6 +8,7 @@ from .agents import AgentContext, AgentResult, create_agent
 from .control import WorkflowPaused, is_pause_requested
 from .context_pack import ContextPackResult, create_context_pack
 from .file_utils import ensure_dir, write_text
+from .permissions import READ_ONLY, check_write
 from .progress import publish_progress, role_stage, workflow_tree
 from .reflection import ReflectionResult, create_reflection
 from .providers import AIProvider, create_provider
@@ -144,6 +145,7 @@ def _render_agent_result(result: AgentResult) -> str:
 
 def _write_workflow_log(project_root: Path, task_id: str, goal: str, results: list[AgentResult]) -> Path:
     output_path = project_root / "logs" / "workflows" / f"{task_id}.md"
+    check_write(READ_ONLY, output_path, project_root, action="写入工作流日志")
     ensure_dir(output_path.parent)
     content = "\n\n".join(
         [
