@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import subprocess
 import sys
@@ -32,16 +33,21 @@ from code_agent_collab.webui import (
 
 
 class _StubProcess:
-    """替身进程：只实现 run_cli 会用到的最小接口，避免测试真的拉起子进程。"""
+    """替身进程：只实现 run_bounded 会用到的最小接口，避免测试真的拉起子进程。"""
 
     returncode = 0
+    pid = 0
+    output = b"stub-output"
 
-    def communicate(self, timeout: int | None = None) -> tuple[str, str]:
+    def __init__(self) -> None:
+        self.stdout = io.BytesIO(self.output)
+
+    def wait(self, timeout: float | None = None) -> int:
         del timeout
-        return "stub-output", ""
+        return self.returncode
 
     def poll(self) -> int:
-        return 0
+        return self.returncode
 
 
 def _record_popen(spawned: dict[str, object]):
@@ -89,9 +95,7 @@ class RunCliTests(unittest.TestCase):
 
     def test_run_cli_caps_returned_command_output(self) -> None:
         class NoisyProcess(_StubProcess):
-            def communicate(self, timeout: int | None = None) -> tuple[str, str]:
-                del timeout
-                return "汉" * (24 * 1024), "尾"
+            output = ("汉" * (24 * 1024) + "尾").encode("utf-8")
 
         with patch.object(subprocess, "Popen", return_value=NoisyProcess()):
             code, output = run_cli(["pending"])

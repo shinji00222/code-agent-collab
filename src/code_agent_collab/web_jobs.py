@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import job_store
 from .control import clear_pause_request
-from .execution_sandbox import limit_command_output
+from .execution_sandbox import kill_process_tree, run_bounded
 from .web_project import CLI_EXE_NAME, PROJECT_ROOT, SRC_DIR
 
 ALLOWED_COMMANDS = {
@@ -115,35 +115,7 @@ def datetime_now() -> str:
 
 
 def _kill_process_tree(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    if os.name == "nt":
-        try:
-            process.terminate()
-            process.wait(timeout=3)
-            return
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            capture_output=True,
-            check=False,
-        )
-        try:
-            process.wait(timeout=3)
-            return
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-        try:
-            process.kill()
-        except OSError:
-            pass
-    else:
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
+    kill_process_tree(process)
 
 
 def _shutdown_cleanup() -> None:
@@ -194,29 +166,16 @@ def run_cli(args: list[str], timeout: int = 180) -> tuple[int, str]:
     else:
         env["PYTHONPATH"] = str(SRC_DIR)
         command = [sys.executable, "-m", "code_agent_collab.cli", *args]
-    process = subprocess.Popen(
+    result = run_bounded(
         command,
         cwd=PROJECT_ROOT,
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        timeout=timeout,
+        active=_ACTIVE_PROCESSES,
     )
-    _ACTIVE_PROCESSES.add(process)
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _kill_process_tree(process)
-        process.wait()
-        raise
-    finally:
-        _ACTIVE_PROCESSES.discard(process)
-    output = stdout
-    if stderr:
-        output += "\n" + stderr
-    return process.returncode, limit_command_output(output)
+    if result.timed_out:
+        raise subprocess.TimeoutExpired(command, timeout, output=result.output)
+    return result.returncode, result.output
 
 
 def _project_root() -> Path:

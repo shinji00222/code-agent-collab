@@ -451,14 +451,48 @@ class EnvTests(unittest.TestCase):
     def test_run_tests_caps_returned_command_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_project(tmp)
-            noisy = subprocess.CompletedProcess([], 1, stdout="x" * (70 * 1024), stderr="tail")
-            with patch("code_agent_collab.apply.subprocess.run", return_value=noisy):
-                code, output = run_tests(root)
+            write_text(
+                root / "tests" / "test_noisy.py",
+                """import os
+import sys
+import unittest
+
+
+class NoisyTests(unittest.TestCase):
+    def test_noisy(self) -> None:
+        sys.stdout.write("x" * (70 * 1024))
+        sys.stdout.flush()
+        sys.stderr.write("tail")
+        sys.stderr.flush()
+        os._exit(1)
+""",
+            )
+            code, output = run_tests(root)
 
         self.assertEqual(code, 1)
         self.assertLessEqual(len(output.encode("utf-8")), 64 * 1024)
         self.assertIn("已截断", output)
         self.assertTrue(output.endswith("tail"))
+
+    def test_run_tests_timeout_returns_124_and_stops_process(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _make_project(tmp)
+            write_text(
+                root / "tests" / "test_hang.py",
+                """import time
+import unittest
+
+
+class HangTests(unittest.TestCase):
+    def test_hang(self) -> None:
+        print("started", flush=True)
+        time.sleep(60)
+""",
+            )
+            code, output = run_tests(root, timeout_seconds=2)
+
+        self.assertEqual(code, 124)
+        self.assertIn("测试超时", output)
 
 
 if __name__ == "__main__":

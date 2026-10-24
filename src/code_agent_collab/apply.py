@@ -3,12 +3,9 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
-import os
 import re
-import shutil
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +18,13 @@ from .draft_review import (
     mentions_main_vault_outside_project,
 )
 from .file_utils import ensure_dir, read_text, write_text
-from .execution_sandbox import limit_command_output
+from .execution_sandbox import (
+    SENSITIVE_ENV_TOKENS,  # noqa: F401 - 兼容旧导入路径
+    TrialWorkspace,
+    limit_command_output,
+    run_bounded,
+    scrubbed_env,
+)
 from .permissions import (
     PROJECT_WRITE,
     check_command,
@@ -59,18 +62,6 @@ TRIAL_COPY_EXCLUDE_DIRS = {
     "logs",
     "dev-vault",
 }
-SENSITIVE_ENV_TOKENS = (
-    "api_key",
-    "apikey",
-    "authorization",
-    "auth",
-    "cookie",
-    "credential",
-    "passwd",
-    "password",
-    "secret",
-    "token",
-)
 
 
 @dataclass(frozen=True)
@@ -447,46 +438,23 @@ def run_tests(
         cwd=project_root,
         project_root=project_root,
     )
-    try:
-        result = subprocess.run(
-            argv,
-            cwd=project_root,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-            timeout=timeout_seconds,
-        )
-    except subprocess.TimeoutExpired as exc:
-        output = (exc.stdout or "") + (exc.stderr or "")
+    result = run_bounded(argv, cwd=project_root, env=env, timeout=timeout_seconds)
+    if result.timed_out:
         return 124, limit_command_output(
-            f"测试超时（>{timeout_seconds} 秒），已终止测试进程。\n{output}"
+            f"测试超时（>{timeout_seconds} 秒），已终止测试进程。\n{result.output}"
         )
-    return result.returncode, limit_command_output(result.stdout + result.stderr)
+    return result.returncode, result.output
 
 
 def _test_env(project_root: Path) -> dict[str, str]:
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if not _is_sensitive_env_item(key, value)
-    }
-    env["PYTHONPATH"] = str(project_root / "src")
-    env["AGENT_WORKBENCH_PROVIDER"] = "mock"
-    for key in ("AGENT_WORKBENCH_API_KEY_ENV", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
-        env.pop(key, None)
-    return env
-
-
-def _is_sensitive_env_item(key: str, value: str) -> bool:
-    lowered = key.lower()
-    if any(token in lowered for token in SENSITIVE_ENV_TOKENS):
-        return True
-    if re.search(r"sk-[A-Za-z0-9]{12,}", value):
-        return True
-    return False
+    return scrubbed_env(
+        {
+            "PYTHONPATH": str(project_root / "src"),
+            "AGENT_WORKBENCH_PROVIDER": "mock",
+            "PYTHONIOENCODING": "utf-8",
+        },
+        drop=("AGENT_WORKBENCH_API_KEY_ENV", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"),
+    )
 
 
 def _run_isolated_tests(
@@ -495,19 +463,14 @@ def _run_isolated_tests(
     *,
     permission: object = PROJECT_WRITE,
 ) -> tuple[int, str]:
-    with tempfile.TemporaryDirectory(prefix="agent-workbench-apply-") as tmp:
-        trial_root = Path(tmp) / project_root.name
-        shutil.copytree(project_root, trial_root, ignore=_ignore_trial_copy)
-        _apply_changes(trial_root, changes, permission=permission)
-        return run_tests(trial_root, permission=permission)
-
-
-def _ignore_trial_copy(directory: str, names: list[str]) -> set[str]:
-    ignored: set[str] = set()
-    for name in names:
-        if name in TRIAL_COPY_EXCLUDE_DIRS:
-            ignored.add(name)
-    return ignored
+    with TrialWorkspace(
+        project_root,
+        exclude_dirs=TRIAL_COPY_EXCLUDE_DIRS,
+        prefix="agent-workbench-apply-",
+    ) as trial:
+        assert trial.root is not None
+        _apply_changes(trial.root, changes, permission=permission)
+        return run_tests(trial.root, permission=permission)
 
 
 def git_commit(
