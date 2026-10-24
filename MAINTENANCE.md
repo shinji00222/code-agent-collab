@@ -28,7 +28,6 @@ project 多Agent代码协作助手/
 ├── PROJECT_RULES.md         # 项目规则总览（给人看）
 ├── MAINTENANCE.md           # 本文件：维护指南、知识流向和旧草案摘要
 ├── SKILLS.md                # 项目技能与经验（新增 Agent/Provider 的标准流程）
-├── RESEARCH_ROADMAP.md      # 进组/科研路线和阶段目标
 ├── AGENTS.md                # 给 AI 的项目协作规则
 ├── README.md                # 项目介绍、命令、使用说明
 ├── README.zh-CN.md          # 中文 README
@@ -41,7 +40,7 @@ project 多Agent代码协作助手/
 
 - 当前项目 Markdown 文件名统一用英文，减少 GitHub 链接编码、PowerShell 引号和跨平台脚本处理成本。
 - 文档正文可以继续用中文；这是给项目维护者看的材料，不需要为了文件名英文而牺牲可读性。
-- 历史中文文件名已经改为：`版本管理.md` → `VERSIONING.md`，`变更记录.md` → `CHANGELOG.md`，`技能.md` → `SKILLS.md`，`维护指南.md` → `MAINTENANCE.md`，`项目规则.md` → `PROJECT_RULES.md`，`科研路线.md` → `RESEARCH_ROADMAP.md`。
+- 历史中文文件名已经改为：`版本管理.md` → `VERSIONING.md`，`变更记录.md` → `CHANGELOG.md`，`技能.md` → `SKILLS.md`，`维护指南.md` → `MAINTENANCE.md`，`项目规则.md` → `PROJECT_RULES.md`。
 
 ### 当前文档入口
 
@@ -54,7 +53,6 @@ project 多Agent代码协作助手/
 | `SKILLS.md` | 已验证的项目经验和标准流程 |
 | `VERSIONING.md` | 版本规划和发布流程 |
 | `CHANGELOG.md` | 版本变更记录 |
-| `RESEARCH_ROADMAP.md` | 进组/科研路线 |
 | `product-docs/project-plan.md` | 产品企划和早期目标摘要 |
 | `product-docs/code-simplification-plan.md` | 代码简化和执行沙箱规划 |
 

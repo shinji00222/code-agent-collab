@@ -95,7 +95,6 @@ scripts/                 packaging and setup scripts
 - [Changelog](CHANGELOG.md)
 - [Maintenance guide](MAINTENANCE.md)
 - [Project skills](SKILLS.md)
-- [Research route](RESEARCH_ROADMAP.md)
 - [Code simplification plan](product-docs/code-simplification-plan.md)
 
 ## Tests

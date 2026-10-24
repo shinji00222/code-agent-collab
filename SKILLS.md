@@ -2,8 +2,6 @@
 
 记录本项目已验证、可复用的开发技能。任务中积累的新经验先在这里沉淀，避免重复踩坑。
 
-> 方向相关：若任务目标是"把项目用于联系导师/进组"或"调整项目规划"，先读 `RESEARCH_ROADMAP.md`（Multi-Agent Software Engineering System 定位、稳定闭环、分层上下文、Evaluation、学习复现线、敲门砖项目约束、广工进组渠道与导师清单、一页纸模板）。普通产品功能类任务按需读取。
-
 ## 1. 多 Agent 顺序工作流
 
 - 做什么：任务按 Coordinator → Knowledge → Planner → Coder → Reviewer → Validator → Reflector 顺序执行，每个 Agent 产出 `AgentResult` 并记录日志。
@@ -425,7 +423,7 @@ python -m unittest discover -s tests
 
 - 做什么：项目 Markdown 文件名统一改用英文；早期分散的产品草案合并进 `MAINTENANCE.md`、`SKILLS.md` 和 `product-docs/project-plan.md`。
 - 为什么：中文文件名在本机可用，但 GitHub 链接会编码，PowerShell 和跨平台脚本引用成本更高；英文文件名更适合公开仓库和后续自动化。
-- 怎么做：核心入口使用 `README.md`、`CHANGELOG.md`、`VERSIONING.md`、`MAINTENANCE.md`、`SKILLS.md`、`PROJECT_RULES.md`、`RESEARCH_ROADMAP.md`；产品规划放 `product-docs/project-plan.md`，代码整理规划放 `product-docs/code-simplification-plan.md`。
+- 怎么做：核心入口使用 `README.md`、`CHANGELOG.md`、`VERSIONING.md`、`MAINTENANCE.md`、`SKILLS.md`、`PROJECT_RULES.md`；产品规划放 `product-docs/project-plan.md`，代码整理规划放 `product-docs/code-simplification-plan.md`。
 - 怎么验证：`rg` 搜索旧中文文件名不应再命中当前活动链接；`git status` 应显示 rename 而不是丢失文件；README 和维护文档链接可点击。
 - 常见坑：不要把“文件名英文”误解成“正文必须英文”。内部维护材料可以继续中文，公开 README 再保持中英双入口。
 
@@ -449,7 +447,7 @@ python -m unittest discover -s tests
 
 - 做什么：长期文档文件名统一为英文，`product-docs/` 文件名也统一为英文；删除不再使用的旧 worktree checkout。
 - 为什么：本项目会在 GitHub、PowerShell、Windows 和可能的 WSL/Linux 之间流转，英文文件名能减少链接编码、命令转义和跨平台脚本成本；正文仍用中文保证维护可读。
-- 怎么做：根目录保留 `README.md` / `README.zh-CN.md` / `AGENTS.md`，长期维护文档使用 `CHANGELOG.md`、`VERSIONING.md`、`MAINTENANCE.md`、`PROJECT_RULES.md`、`SKILLS.md`、`RESEARCH_ROADMAP.md`、`KNOWLEDGE_MAP.md`；产品文档放 `product-docs/*.md`，文件名英文、内容中文。
+- 怎么做：根目录保留 `README.md` / `README.zh-CN.md` / `AGENTS.md`，长期维护文档使用 `CHANGELOG.md`、`VERSIONING.md`、`MAINTENANCE.md`、`PROJECT_RULES.md`、`SKILLS.md`、`KNOWLEDGE_MAP.md`；产品文档放 `product-docs/*.md`，文件名英文、内容中文。
 - worktree 清理规则：先跑 `git worktree list --porcelain` 和目标 worktree 内 `git status --short --branch`；确认干净、无未跟踪文件、不是当前主工作区后，用 `git worktree remove <path>`，再 `git worktree prune` 验证列表只剩主工作区。
 - 怎么验证：`git worktree list --porcelain` 只显示主工作区；`rg` 检查新文件名引用；最后跑 `python scripts/run-tests.py`。
 - 常见坑：不要用普通删除直接删已登记 worktree；那会留下 Git worktree 元数据。不要把“文档文件名英文”理解成正文也要英文，正文继续按 shin 的中文维护习惯写。

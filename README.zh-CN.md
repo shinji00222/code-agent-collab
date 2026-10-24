@@ -95,7 +95,6 @@ scripts/                 打包与配置脚本
 - [变更记录](CHANGELOG.md)
 - [维护指南](MAINTENANCE.md)
 - [项目技能](SKILLS.md)
-- [科研路线](RESEARCH_ROADMAP.md)
 - [代码简化优化规划](product-docs/code-simplification-plan.md)
 
 ## 测试
