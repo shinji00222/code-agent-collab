@@ -1,5 +1,15 @@
 # 更新日志
 
+## v0.19.1 - 未发布（沙箱收口与运行时写入强制点，开发版）
+
+- 分类：开发版；只做了本地提交，尚未打 tag、推送或发布。`pyproject.toml` 版本号等发布时再改。
+- 共享执行接口（台账 N43）：apply 测试和 Web CLI 都改走 `execution_sandbox.run_bounded()`。stdout/stderr 合并后边读边丢，内存里最多保留 64 KiB 末尾输出；超时后结束整棵进程树（Windows 用 `taskkill /T`，其他系统用进程组），孙进程不会残留。敏感环境变量的过滤统一到 `scrubbed_env()`，临时试跑副本改由 `TrialWorkspace` 管理，退出或异常时都会删除。
+- 运行时写入强制点（台账 N30）：上下文包、任务日志、暂停请求、断点、进度、黑板、WorkerRun 账本、工作流日志、主控方案、本地配置写入前都要过 `check_write(READ_ONLY)`，只能落在 `logs/` 或 `.agent-workbench/`；复利候选和候选审查状态需要 `DRAFT_WRITE`，只能落在 `dev-vault/`。
+- 行为变更（台账 N31）：`AGENT_WORKBENCH_CONTROL_DIR` 和 `AGENT_WORKBENCH_PROGRESS_FILE` 如果指向项目外、正式源码区或 `dev-vault/`，会直接拒绝（`PermissionDenied`），不再静默写到那里。
+- 兼容性：CLI 命令和配置格式不变。`discard_pending_note()` 新增可选参数 `project_root`；Web CLI 返回的输出现在按真实顺序交错显示 stdout/stderr，不再先 stdout 后 stderr。
+- 验证：全量测试 334 项通过（新增 17 项，覆盖超时、孙进程清理、内存上限、环境过滤、试跑副本清理、环境变量越界拒绝）；用 mock Provider 实跑 `coding-loop`、`benchmark --mode both`、`run-adaptive` + `approve`，退出码都是 0。
+- 还没做：只读 git 查询（`apply.git_status_porcelain`、`_git_head`、`context_pack`、`task_log`）、桌面端 `desktop.py` 和 MCP 子进程仍未接入 `check_command`；最终 EXE 需要重新构建并实机验收。
+
 ## v0.19.0 - 2026-10-22（Execution Sandbox Hardening Windows 预览版）
 
 - 分类：Windows x64 预览版，GitHub [Release `v0.19.0-rc.1`](https://github.com/shinji00222/code-agent-collab/releases/tag/v0.19.0-rc.1)；当前 Windows 11 上构建，无自动安装器，可解压使用。此预览包未数字签名，Windows 可能显示 SmartScreen 警告；不要求用户绕过系统保护。

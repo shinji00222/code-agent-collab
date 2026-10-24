@@ -626,3 +626,14 @@ python -m unittest discover -s tests
 - 怎么做：按顺序尝试 Local AppData、系统临时目录、PyInstaller 运行目录；每个候选先验证 ASCII 路径并创建目录，失败后继续尝试下一个，全部失败时汇总路径和错误。
 - 怎么验证：运行 `python scripts/run-tests.py test_runtime_hook_pythonnet_path`，覆盖非 ASCII 用户目录、默认目录、Local AppData 被拒、临时目录被拒、Python.NET/WebView staging 和全部目录不可写；发布仍需对最终 ZIP 实测窗口、主页 HTTP 200、正常关窗和端口释放。
 - 常见坑：源码测试和重打包通过不能代替最终 ZIP 启动验证；缓存目录 fallback 修复若未在目标 Windows 用户权限下实测，仍不能宣称 GUI 门禁已通过。
+
+## 57. 受控子进程与运行时写入强制点（v0.19.1 开发版）
+
+- 做什么：替用户跑子进程统一用 `execution_sandbox.run_bounded()`；任何写文件的位置写之前都调用 `check_write()`。
+- 为什么：以前测试和 Web CLI 各自 `subprocess.run(capture_output=True)`，先把输出全读进内存再截断；超时只结束父进程，孙进程会残留。日志、进度等运行时账本直接写文件，环境变量能把它们引到项目外。
+- 怎么做：
+  - 新的执行入口：`run_bounded(argv, cwd=..., timeout=..., env=scrubbed_env(...), active=集合)`，返回 `CommandResult(returncode, output, timed_out, truncated)`。需要临时副本时用 `with TrialWorkspace(root, exclude_dirs=...) as trial:`。
+  - 新的写入点：系统账本写 `check_write(READ_ONLY, path, project_root, action=...)`（只允许 `logs/`、`.agent-workbench/`）；草稿和候选写 `check_write(DRAFT_WRITE, ...)`（`dev-vault/`）；正式源码沿用 `PROJECT_WRITE`。
+- 怎么验证：`python scripts/run-tests.py test_execution_sandbox test_permissions test_progress test_apply test_webui`；再用 `AGENT_WORKBENCH_PROVIDER=mock` 实跑 `coding-loop`、`run-adaptive` + `approve`，确认没有误拦。
+- 常见坑：长连接或流式子进程（桌面端日志流、MCP stdio）不适合 `run_bounded`，要单独处理；`check_command` 目前要求 `PROJECT_WRITE`，不适合只读 git 查询，这类查询暂未接入（台账 N30 遗留）。在 bash heredoc 里用 Python 改中文源码时，`
+` 很容易被转成真换行，改完要先跑一遍导入或测试。
